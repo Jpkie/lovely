@@ -25,6 +25,9 @@ import { StartupContextMenu } from './modules/ui/startupContextMenu';
 import { CronContextMenu } from './modules/ui/cronContextMenu';
 import { FirewallContextMenu } from './modules/ui/firewallContextMenu';
 import { aiService } from './modules/ai/aiService';
+import { agentService } from './modules/ai/agentService';
+import { skillRegistry } from './modules/ai/skillRegistry';
+import type { AgentRunResult, AgentMode } from './modules/ai/agentTypes';
 
 // 全局变量
 import { sftpManager } from './modules/remote/sftpManager';
@@ -40,6 +43,12 @@ interface AIChatHistoryItem {
   timestamp: string;
 }
 let aiChatHistory: AIChatHistoryItem[] = [];
+
+// Agent 模式状态
+let agentMode: AgentMode = 'normal';
+let agentSelectedSkills: string[] = [];
+let agentExecutionResult: AgentRunResult | null = null;
+let agentIsRunning: boolean = false;
 
 function mapProviderKeyToTypeForChat(key: string): 'openai' | 'deepseek' | 'claude' | 'custom' {
   if (key === 'openai' || key === 'deepseek' || key === 'claude' || key === 'custom') return key;
@@ -2637,7 +2646,19 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
       });
     }
 
+    const agentInputEl = document.getElementById('agent-task-input') as HTMLTextAreaElement | null;
+    if (agentInputEl && !agentInputEl.dataset.bound) {
+      agentInputEl.dataset.bound = '1';
+      agentInputEl.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          (window as any).runAgentTask?.();
+        }
+      });
+    }
+
     renderAIChatMessages();
+    (window as any).initAgentUI?.();
   };
 
   (window as any).openAISettingsFromChat = function () {
@@ -2729,6 +2750,171 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
       if (sendBtn) sendBtn.disabled = false;
       inputEl.focus();
     }
+  };
+
+  // Agent 模式初始化
+  (window as any).initAgentUI = async function () {
+    const skillsGrid = document.getElementById('agent-skills-grid');
+    if (skillsGrid && !skillsGrid.innerHTML) {
+      const shortcutsHtml = skillRegistry.renderSkillShortcuts(agentSelectedSkills);
+      skillsGrid.innerHTML = shortcutsHtml;
+    }
+    (window as any).updateAgentSkillButtons();
+  };
+
+  // 切换 AI 模式
+  (window as any).switchAIMode = function (mode: 'normal' | 'agent') {
+    agentMode = mode;
+
+    const normalBtn = document.getElementById('mode-normal-btn');
+    const agentBtn = document.getElementById('mode-agent-btn');
+    const normalArea = document.getElementById('normal-chat-area');
+    const agentInputArea = document.getElementById('agent-input-area');
+    const skillsArea = document.getElementById('agent-skills-area');
+    const agentResultArea = document.getElementById('agent-result-area');
+    const subtitle = document.getElementById('ai-chat-subtitle');
+
+    if (mode === 'agent') {
+      normalBtn?.classList.remove('active');
+      agentBtn?.classList.add('active');
+      normalArea?.classList.add('hidden');
+      agentInputArea?.classList.add('visible');
+      skillsArea?.classList.add('visible');
+      agentResultArea?.classList.add('visible');
+      if (subtitle) subtitle.textContent = '描述问题，Agent 自动规划和执行';
+      (window as any).initAgentUI?.();
+    } else {
+      normalBtn?.classList.add('active');
+      agentBtn?.classList.remove('active');
+      normalArea?.classList.remove('hidden');
+      agentInputArea?.classList.remove('visible');
+      skillsArea?.classList.remove('visible');
+      agentResultArea?.classList.remove('visible');
+      if (subtitle) subtitle.textContent = '配置 AI 后可直接提问运维、安全和故障排查问题';
+    }
+  };
+
+  // 更新 Skill 按钮选中状态
+  (window as any).updateAgentSkillButtons = function () {
+    document.querySelectorAll('.skill-shortcut-btn').forEach(btn => {
+      const skillId = (btn as HTMLElement).dataset.skillId;
+      if (skillId && agentSelectedSkills.includes(skillId)) {
+        btn.classList.add('selected');
+      } else {
+        btn.classList.remove('selected');
+      }
+    });
+  };
+
+  // 切换 Skill 选择
+  (window as any).toggleAgentSkill = function (skillId: string) {
+    const index = agentSelectedSkills.indexOf(skillId);
+    if (index === -1) {
+      agentSelectedSkills.push(skillId);
+    } else {
+      agentSelectedSkills.splice(index, 1);
+    }
+    (window as any).updateAgentSkillButtons?.();
+  };
+
+  // 执行 Agent 任务
+  (window as any).runAgentTask = async function () {
+    const inputEl = document.getElementById('agent-task-input') as HTMLTextAreaElement | null;
+    const runBtn = document.getElementById('agent-run-btn') as HTMLButtonElement | null;
+    const task = inputEl?.value.trim();
+
+    if (!task) return;
+
+    const context = await sshConnectionManager.getAgentConnectionContext();
+    if (!context.isConnected) {
+      alert('请先连接到 SSH');
+      return;
+    }
+
+    if (runBtn) runBtn.disabled = true;
+    agentIsRunning = true;
+    agentExecutionResult = null;
+
+    const runningIndicator = document.getElementById('agent-running-indicator');
+    const planSection = document.getElementById('agent-result-plan');
+    const tracesSection = document.getElementById('agent-result-traces');
+    const finalSection = document.getElementById('agent-result-final');
+
+    if (runningIndicator) runningIndicator.style.display = 'flex';
+    if (planSection) planSection.style.display = 'none';
+    if (tracesSection) tracesSection.style.display = 'none';
+    if (finalSection) finalSection.style.display = 'none';
+
+    try {
+      const result = await agentService.runAgentTask({
+        task,
+        skills: agentSelectedSkills,
+        context,
+      });
+
+      agentExecutionResult = result;
+
+      if (runningIndicator) runningIndicator.style.display = 'none';
+
+      const steps = result.structured_output?.steps || [];
+      if (steps.length > 0) {
+        if (tracesSection) tracesSection.style.display = 'block';
+        const tracesContent = document.getElementById('agent-traces-content');
+        if (tracesContent) {
+          tracesContent.innerHTML = steps.map((step: any) => {
+            const output = step.output ? String(step.output).substring(0, 200) : '';
+            const extra = step.output && String(step.output).length > 200 ? '...' : '';
+            return `
+              <div class="agent-trace-item">
+                <span class="trace-tool">[${step.tool_name}]</span>
+                <span style="color:var(--text-secondary)">${step.status}</span>
+                ${output ? `- ${output}${extra}` : ''}
+                ${step.error ? `<span style="color:var(--error-color)"> Error: ${step.error}</span>` : ''}
+              </div>
+            `;
+          }).join('');
+        }
+      }
+
+      if (finalSection) finalSection.style.display = 'block';
+      const finalContent = document.getElementById('agent-final-content');
+      if (finalContent) {
+        const summary = result.raw_summary || '';
+        if (result.skill_results && result.skill_results.length > 0) {
+          const skillInfo = result.skill_results.map((sr: any) =>
+            `${sr.skill_name}: ${sr.summary} (风险: ${sr.risk_level})`
+          ).join('\n');
+          finalContent.textContent = `${summary}\n\n${skillInfo}`;
+        } else {
+          finalContent.textContent = summary || '（无结果）';
+        }
+      }
+
+    } catch (error) {
+      if (runningIndicator) runningIndicator.style.display = 'none';
+      const msg = error instanceof Error ? error.message : String(error);
+      if (finalSection) finalSection.style.display = 'block';
+      const finalContent = document.getElementById('agent-final-content');
+      if (finalContent) {
+        finalContent.textContent = `执行失败：${msg}`;
+      }
+    } finally {
+      if (runBtn) runBtn.disabled = false;
+      agentIsRunning = false;
+    }
+  };
+
+  // 清空 Agent 结果
+  (window as any).clearAgentResult = function () {
+    agentExecutionResult = null;
+    const runningIndicator = document.getElementById('agent-running-indicator');
+    const planSection = document.getElementById('agent-result-plan');
+    const tracesSection = document.getElementById('agent-result-traces');
+    const finalSection = document.getElementById('agent-result-final');
+    if (runningIndicator) runningIndicator.style.display = 'none';
+    if (planSection) planSection.style.display = 'none';
+    if (tracesSection) tracesSection.style.display = 'none';
+    if (finalSection) finalSection.style.display = 'none';
   };
 
   // 系统信息标签页切换函数

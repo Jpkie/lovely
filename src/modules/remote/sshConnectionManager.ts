@@ -16,6 +16,14 @@ export interface SSHConnectionInfo {
   lastActivity?: Date;
 }
 
+export interface AgentConnectionContext {
+  isConnected: boolean;
+  host?: string;
+  port?: number;
+  username?: string;
+  connectionId?: string;
+}
+
 export class SSHConnectionManager {
   private connectionStatus: SSHConnectionInfo | null = null;
   private listeners: Array<(status: SSHConnectionInfo | null) => void> = [];
@@ -231,6 +239,23 @@ export class SSHConnectionManager {
       console.error('检查SSH连接状态失败:', error);
       return null;
     }
+  }
+
+  /**
+   * 获取 Agent 所需的连接上下文（轻量增强）
+   */
+  getAgentConnectionContext(): AgentConnectionContext {
+    const status = this.connectionStatus;
+    if (!status || !status.connected) {
+      return { isConnected: false };
+    }
+    return {
+      isConnected: true,
+      host: status.host,
+      port: status.port,
+      username: status.username,
+      connectionId: status.id,
+    };
   }
 }
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @tauri-apps/api/core shim
  * �?Tauri invoke 替换�?Python FastAPI HTTP 调用
  */
@@ -146,6 +146,12 @@ export async function invoke<T = any>(cmd: string, args?: Record<string, any>): 
     // 加密 & 设备信息
     get_rsa_public_key: () => pythonApi.getRsaPublicKey(),
     get_device_uuid: () => pythonApi.getDeviceUuid(),
+
+    // Agent
+    agent_run: () => pythonApi.agentRun(args?.req || args || {}),
+    agent_context: () => pythonApi.agentContext(),
+    agent_tools: () => pythonApi.agentTools(),
+    agent_skills: () => pythonApi.agentSkills(),
   };
 
   const handler = commandMap[cmd];

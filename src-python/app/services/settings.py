@@ -40,6 +40,40 @@ class SSHSettings(BaseModel):
     max_retries: int = 3
 
 
+class AgentModelSettings(BaseModel):
+    """Agent 模型配置"""
+
+    provider: str = "openai"
+    model_name: str = "gpt-4"
+    api_key: Optional[str] = None
+    base_url: str = "https://api.openai.com/v1"
+    temperature: float = 0.7
+    max_tokens: int = 4096
+    timeout: int = 60
+    fallback_model: Optional[str] = None
+
+
+class AgentPlannerSettings(BaseModel):
+    """Agent Planner 配置"""
+
+    enable_llm_planner: bool = False
+    max_skills_per_task: int = 3
+
+
+class AgentSettings(BaseModel):
+    """Agent 设置"""
+
+    enabled: bool = True
+    planner: AgentPlannerSettings = Field(default_factory=AgentPlannerSettings)
+    planner_model: AgentModelSettings = Field(default_factory=AgentModelSettings)
+    executor_model: AgentModelSettings = Field(
+        default_factory=lambda: AgentModelSettings(model_name="gpt-3.5-turbo")
+    )
+    summarizer_model: AgentModelSettings = Field(
+        default_factory=lambda: AgentModelSettings(model_name="gpt-3.5-turbo")
+    )
+
+
 class AppSettings(BaseModel):
     theme: str = "light"
     language: str = "zh-CN"
@@ -54,6 +88,7 @@ class AppSettings(BaseModel):
     ui: UISettings = Field(default_factory=UISettings)
     ssh: SSHSettings = Field(default_factory=SSHSettings)
     ai: Optional[Dict[str, Any]] = None
+    agent: Optional[AgentSettings] = None
 
 
 # ==================== 设置管理 ====================

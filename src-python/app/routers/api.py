@@ -24,6 +24,7 @@ from app.services import detection_manager, file_analysis, log_analysis
 from app.services.ssh_connection_manager import SSHConnectionManager
 from app.services.ssh_manager import SSHManager
 from app.services.settings import (
+    AgentSettings,
     AppSettings,
     load_settings,
     read_settings_file,
@@ -35,6 +36,18 @@ from app.services.device_info import get_device_uuid
 from app.services.window_manager import WindowManager
 from app.utils.crypto import get_rsa_public_key
 from app.utils.system_fonts import get_system_fonts
+
+from app.services.agent import (
+    AgentOrchestrator,
+    AgentRequest,
+    get_default_registry,
+    get_default_skill_registry,
+    HostSummaryBuilder,
+    HostSummaryContext,
+    PlannerConfig,
+    RoleModelConfig,
+    UnifiedLLMAdapter,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["lovelyres"])
 
@@ -250,6 +263,15 @@ class OpenDialogRequest(BaseModel):
 class SaveDialogRequest(BaseModel):
     filters: List[DialogFilterRequest] = Field(default_factory=list)
     default_path: Optional[str] = None
+
+
+class AgentRunRequest(BaseModel):
+    """Agent 运行请求"""
+
+    task: str
+    skills: List[str] = Field(default_factory=list)
+    context: Dict[str, Any] = Field(default_factory=dict)
+    max_steps: int = 10
 
 
 def _run_native_dialog(kind: str, options: Dict[str, Any]) -> Any:
@@ -1256,3 +1278,164 @@ async def get_device_uuid_endpoint():
     """获取设备 UUID"""
     info = get_device_uuid()
     return info.model_dump()
+
+
+# ==================== Agent API ====================
+
+
+def _get_agent_config() -> Optional[AgentSettings]:
+    """获取 Agent 配置"""
+    global _app_settings
+    if _app_settings is None:
+        return None
+    return _app_settings.agent
+
+
+@router.post("/agent/run")
+async def agent_run(req: AgentRunRequest):
+    """运行 Agent 任务"""
+    ssh = get_ssh_manager()
+    agent_config = _get_agent_config()
+
+    context = dict(req.context)
+    context["ssh_manager"] = ssh
+
+    planner_config = None
+    if agent_config and agent_config.enabled:
+        planner_config = PlannerConfig(
+            enable_llm_planner=agent_config.planner.enable_llm_planner,
+            max_skills_per_task=agent_config.planner.max_skills_per_task,
+        )
+
+    orchestrator = AgentOrchestrator(planner_config=planner_config)
+
+    agent_request = AgentRequest(
+        task=req.task,
+        skills=req.skills,
+        context=context,
+        max_steps=req.max_steps,
+    )
+
+    report = await orchestrator.run(agent_request)
+
+    return {
+        "id": report.id,
+        "request_id": report.request_id,
+        "task": report.task,
+        "status": report.status,
+        "skill_results": [
+            {
+                "skill_name": sr.skill_name,
+                "summary": sr.summary,
+                "risk_level": sr.risk_level,
+                "recommendations": sr.recommendations,
+                "findings_count": len(sr.findings),
+            }
+            for sr in report.skill_results
+        ],
+        "structured_output": report.structured_output,
+        "total_duration_ms": report.total_duration_ms,
+        "created_at": report.created_at.isoformat(),
+    }
+
+
+@router.get("/agent/context")
+async def agent_get_context():
+    """获取 Agent 上下文信息"""
+    ssh = get_ssh_manager()
+
+    if not ssh.is_connected():
+        return {
+            "connected": False,
+            "host_info": None,
+            "summary": None,
+        }
+
+    from app.services.agent.schemas import HostInfo
+
+    try:
+        result = await ssh.execute_command("hostname")
+        hostname = result.output.strip() if result.exit_code == 0 else "unknown"
+
+        result = await ssh.execute_command("uname -a")
+        uname_output = result.output.strip() if result.exit_code == 0 else ""
+
+        result = await ssh.execute_command("free -h")
+        memory_output = result.output.strip() if result.exit_code == 0 else ""
+
+        result = await ssh.execute_command("df -h")
+        disk_output = result.output.strip() if result.exit_code == 0 else ""
+
+        host_info = HostInfo(
+            hostname=hostname,
+            os=uname_output,
+            memory_total=memory_output.split("\n")[1] if memory_output else "N/A",
+            disk_total=disk_output.split("\n")[1] if disk_output else "N/A",
+        )
+
+        host_context = HostSummaryContext(
+            host_info=host_info,
+            recent_commands=[],
+            suspicious_processes=[],
+            open_ports=[],
+            risk_level="unknown",
+            recommendations=[],
+        )
+
+        summary = HostSummaryBuilder.build_summary(host_context)
+
+        return {
+            "connected": True,
+            "host_info": host_info.model_dump(),
+            "summary": summary,
+        }
+
+    except Exception as e:
+        return {
+            "connected": True,
+            "host_info": None,
+            "summary": None,
+            "error": str(e),
+        }
+
+
+@router.get("/agent/tools")
+async def agent_get_tools():
+    """获取可用工具列表"""
+    registry = get_default_registry()
+    tools = registry.list_tools()
+
+    return {
+        "tools": [
+            {
+                "id": t.id,
+                "name": t.name,
+                "description": t.description,
+                "skill_type": getattr(t, "skill_type", None),
+                "enabled": getattr(t, "enabled", True),
+            }
+            for t in tools
+        ],
+        "count": len(tools),
+    }
+
+
+@router.get("/agent/skills")
+async def agent_get_skills():
+    """获取可用 Skills 列表"""
+    registry = get_default_skill_registry()
+    skills = registry.list_skills()
+
+    return {
+        "skills": [
+            {
+                "id": s.id,
+                "name": s.name,
+                "description": s.description,
+                "category": s.category,
+                "step_count": len(s.steps),
+            }
+            for s in skills
+        ],
+        "count": len(skills),
+    }

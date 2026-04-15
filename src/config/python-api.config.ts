@@ -417,6 +417,24 @@ class PythonApi {
   async getDeviceUuid() {
     return this.request('GET', '/device/uuid');
   }
+
+  // ==================== Agent ====================
+
+  async agentRun(params: { task: string; skills?: string[]; context?: Record<string, any>; max_steps?: number }) {
+    return this.request('POST', '/agent/run', params);
+  }
+
+  async agentContext() {
+    return this.request('GET', '/agent/context');
+  }
+
+  async agentTools() {
+    return this.request('GET', '/agent/tools');
+  }
+
+  async agentSkills() {
+    return this.request('GET', '/agent/skills');
+  }
 }
 
 // 导出单例

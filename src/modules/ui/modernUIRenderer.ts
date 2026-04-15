@@ -2084,13 +2084,51 @@ export class ModernUIRenderer {
    */
   private renderAIChatPage(): string {
     return `
-      <div class="ai-chat-page" style="display:flex; flex-direction:column; gap:16px; height:calc(100vh - 140px);">
+      <style>
+        .ai-chat-page { display:flex; flex-direction:column; gap:16px; height:calc(100vh - 140px); }
+        .ai-mode-toggle { display:flex; gap:4px; background:var(--bg-secondary); padding:4px; border-radius:8px; }
+        .ai-mode-btn { padding:6px 16px; border:none; border-radius:6px; background:transparent; color:var(--text-secondary); font-size:13px; cursor:pointer; transition:all 0.2s; }
+        .ai-mode-btn.active { background:var(--primary-color); color:#fff; }
+        .ai-mode-btn:hover:not(.active) { background:var(--bg-tertiary); }
+        .agent-skills-area { display:none; padding:12px 16px; background:var(--bg-secondary); border-radius:12px; }
+        .agent-skills-area.visible { display:block; }
+        .agent-skills-label { font-size:12px; color:var(--text-secondary); margin-bottom:10px; }
+        .agent-skills-grid { display:flex; flex-wrap:wrap; gap:8px; }
+        .skill-shortcut-btn { display:flex; flex-direction:column; align-items:center; gap:4px; padding:10px 14px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:10px; cursor:pointer; transition:all 0.2s; min-width:90px; }
+        .skill-shortcut-btn:hover { border-color:var(--primary-color); background:var(--bg-tertiary); }
+        .skill-shortcut-btn.selected { border-color:var(--primary-color); background:color-mix(in srgb, var(--primary-color) 15%, transparent); }
+        .skill-shortcut-btn .skill-icon { font-size:20px; }
+        .skill-shortcut-btn .skill-name { font-size:12px; font-weight:500; color:var(--text-primary); }
+        .skill-shortcut-btn .skill-desc { font-size:10px; color:var(--text-secondary); }
+        .agent-result-area { display:none; flex:1; min-height:0; overflow:auto; }
+        .agent-result-area.visible { display:flex; flex-direction:column; gap:12px; }
+        .agent-result-section { padding:12px 16px; background:var(--bg-secondary); border-radius:12px; }
+        .agent-result-section h4 { margin:0 0 8px; font-size:13px; color:var(--primary-color); }
+        .agent-result-section pre { margin:0; font-size:12px; color:var(--text-primary); white-space:pre-wrap; word-break:break-all; max-height:300px; overflow:auto; }
+        .agent-plan-step { padding:8px 12px; background:var(--bg-primary); border-radius:8px; margin-bottom:6px; border-left:3px solid var(--primary-color); }
+        .agent-plan-step .step-num { font-size:11px; color:var(--primary-color); margin-bottom:4px; }
+        .agent-plan-step .step-content { font-size:12px; color:var(--text-primary); }
+        .agent-trace-item { padding:6px 10px; background:var(--bg-primary); border-radius:6px; margin-bottom:4px; font-size:12px; color:var(--text-secondary); }
+        .agent-trace-item .trace-tool { color:var(--primary-color); font-weight:500; }
+        .agent-running-indicator { display:flex; align-items:center; gap:8px; padding:12px 16px; background:var(--bg-secondary); border-radius:12px; }
+        .agent-spinner { width:16px; height:16px; border:2px solid var(--border-color); border-top-color:var(--primary-color); border-radius:50%; animation:spin 0.8s linear infinite; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+        .normal-chat-area { display:flex; flex-direction:column; gap:16px; flex:1; min-height:0; }
+        .normal-chat-area.hidden { display:none; }
+        .agent-chat-input-area { display:none; }
+        .agent-chat-input-area.visible { display:flex; }
+      </style>
+      <div class="ai-chat-page">
         <div class="panel-card" style="padding:16px; display:flex; justify-content:space-between; align-items:center; gap:12px;">
           <div>
-            <h2 style="margin:0; font-size:18px; color:var(--text-primary);">AI 聊天助手</h2>
-            <p style="margin:4px 0 0; font-size:13px; color:var(--text-secondary);">配置 AI 后可直接提问运维、安全和故障排查问题</p>
+            <h2 style="margin:0; font-size:18px; color:var(--text-primary);">AI 助手</h2>
+            <p id="ai-chat-subtitle" style="margin:4px 0 0; font-size:13px; color:var(--text-secondary);">配置 AI 后可直接提问运维、安全和故障排查问题</p>
           </div>
           <div style="display:flex; gap:8px; align-items:center;">
+            <div class="ai-mode-toggle">
+              <button id="mode-normal-btn" class="ai-mode-btn active" onclick="window.switchAIMode && window.switchAIMode('normal')">普通模式</button>
+              <button id="mode-agent-btn" class="ai-mode-btn" onclick="window.switchAIMode && window.switchAIMode('agent')">Agent 模式</button>
+            </div>
             <span id="ai-chat-provider-status" style="font-size:12px; color:var(--text-secondary);">正在检查 AI 配置...</span>
             <select id="ai-chat-model-select" onchange="window.switchAIChatModel && window.switchAIChatModel(this.value)" style="
               min-width: 190px;
@@ -2107,15 +2145,50 @@ export class ModernUIRenderer {
           </div>
         </div>
 
-        <div id="ai-chat-messages" class="panel-card" style="flex:1; min-height:0; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:10px;"></div>
+        <div id="agent-skills-area" class="agent-skills-area">
+          <div class="agent-skills-label">选择要使用的 Skill（可多选）</div>
+          <div id="agent-skills-grid" class="agent-skills-grid"></div>
+        </div>
 
-        <div class="panel-card" style="padding:12px; display:flex; gap:10px; align-items:flex-end;">
+        <div id="agent-result-area" class="agent-result-area">
+          <div id="agent-running-indicator" class="agent-running-indicator" style="display:none;">
+            <div class="agent-spinner"></div>
+            <span>Agent 正在执行任务...</span>
+          </div>
+          <div id="agent-result-plan" class="agent-result-section" style="display:none;">
+            <h4>📋 执行计划</h4>
+            <div id="agent-plan-content"></div>
+          </div>
+          <div id="agent-result-traces" class="agent-result-section" style="display:none;">
+            <h4>🔍 执行痕迹</h4>
+            <div id="agent-traces-content"></div>
+          </div>
+          <div id="agent-result-final" class="agent-result-section" style="display:none;">
+            <h4>✨ 执行结果</h4>
+            <pre id="agent-final-content"></pre>
+          </div>
+        </div>
+
+        <div id="normal-chat-area" class="normal-chat-area">
+          <div id="ai-chat-messages" class="panel-card" style="flex:1; min-height:0; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:10px;"></div>
+
+          <div class="panel-card" style="padding:12px; display:flex; gap:10px; align-items:flex-end;">
+            <textarea
+              id="ai-chat-input"
+              placeholder="输入你的问题，按 Enter 发送，Shift+Enter 换行"
+              style="flex:1; min-height:72px; max-height:180px; resize:vertical; padding:10px 12px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-secondary); color:var(--text-primary);"
+            ></textarea>
+            <button id="ai-chat-send-btn" class="modern-btn primary" onclick="window.sendAIChatMessage()">发送</button>
+          </div>
+        </div>
+
+        <div id="agent-input-area" class="agent-chat-input-area panel-card" style="padding:12px; display:flex; gap:10px; align-items:flex-end;">
           <textarea
-            id="ai-chat-input"
-            placeholder="输入你的问题，按 Enter 发送，Shift+Enter 换行"
+            id="agent-task-input"
+            placeholder="描述你要解决的运维问题，Agent 将自动规划和执行..."
             style="flex:1; min-height:72px; max-height:180px; resize:vertical; padding:10px 12px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-secondary); color:var(--text-primary);"
           ></textarea>
-          <button id="ai-chat-send-btn" class="modern-btn primary" onclick="window.sendAIChatMessage()">发送</button>
+          <button id="agent-run-btn" class="modern-btn primary" onclick="window.runAgentTask()">执行</button>
         </div>
       </div>
     `;

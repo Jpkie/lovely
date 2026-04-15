@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Tauri invoke 适配�? * 
  * 此模块提供了一个与 Tauri invoke 完全兼容�?API 接口�? * 但底层使�?HTTP 请求调用 Python FastAPI 后端�? * 
  * 使用方式�? *   将前端代码中�?`import { invoke } from '@tauri-apps/api/core'`
@@ -152,6 +152,12 @@ export async function invoke(cmd: string, args?: Record<string, any>): Promise<a
     // 加密 & 设备信息
     get_rsa_public_key: () => pythonApi.getRsaPublicKey(),
     get_device_uuid: () => pythonApi.getDeviceUuid(),
+
+    // Agent
+    agent_run: () => pythonApi.agentRun(args?.req || args || {}),
+    agent_context: () => pythonApi.agentContext(),
+    agent_tools: () => pythonApi.agentTools(),
+    agent_skills: () => pythonApi.agentSkills(),
   };
 
   const handler = commandMap[cmd];

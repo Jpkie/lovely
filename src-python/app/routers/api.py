@@ -1284,7 +1284,12 @@ async def get_device_uuid_endpoint():
 
 
 def _get_agent_config() -> Optional[AgentSettings]:
-    """获取 Agent 配置"""
+    """读取 settings.agent 配置（只读，不做默认合并）
+
+    注意:
+      - 返回 None 表示 settings 未加载
+      - agent.enabled=False 时 /agent/run 会提前返回，不抛异常
+    """
     global _app_settings
     if _app_settings is None:
         return None
@@ -1294,19 +1299,42 @@ def _get_agent_config() -> Optional[AgentSettings]:
 @router.post("/agent/run")
 async def agent_run(req: AgentRunRequest):
     """运行 Agent 任务"""
-    ssh = get_ssh_manager()
     global _app_settings
     agent_config = _get_agent_config()
+
+    if agent_config is None or not agent_config.enabled:
+        return {
+            "id": "",
+            "request_id": getattr(req, "id", ""),
+            "task": req.task,
+            "status": "failed",
+            "skill_name": None,
+            "plan": None,
+            "traces": [],
+            "final": {
+                "summary": "Agent 功能已禁用",
+                "evidence": [],
+                "risks": [],
+                "recommendations": [],
+                "commands": [],
+                "next_actions": [],
+            },
+            "skill_results": [],
+            "raw_summary": "Agent 功能已禁用",
+            "structured_output": {},
+            "total_duration_ms": 0,
+            "created_at": "",
+        }
+
+    ssh = get_ssh_manager()
 
     context = dict(req.context)
     context["ssh_manager"] = ssh
 
-    planner_config = None
-    if agent_config and agent_config.enabled:
-        planner_config = PlannerConfig(
-            enable_llm_planner=agent_config.planner.enable_llm_planner,
-            max_skills_per_task=agent_config.planner.max_skills_per_task,
-        )
+    planner_config = PlannerConfig(
+        enable_llm_planner=agent_config.planner.enable_llm_planner,
+        max_skills_per_task=agent_config.planner.max_skills_per_task,
+    )
 
     runtime_registry = None
     try:

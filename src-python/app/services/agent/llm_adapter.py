@@ -447,19 +447,215 @@ class LLMAdapterFactory:
 
 
 class UnifiedLLMAdapter:
-    """统一 LLM 适配器 - 支持角色模型回退"""
+    """统一 LLM 适配器 - 支持多角色模型回退
 
-    def __init__(self, role_config: RoleModelConfig):
-        self.role_config = role_config
-        self._adapters: Dict[str, BaseLLMAdapter] = {}
+    多模型模式 (multi_model_enabled=True):
+        router   → router_model → planner_model → primary
+        planner  → planner_model → primary
+        analyst  → analyst_model → summarizer_model → primary
+        judge    → judge_model → analyst_model → summarizer_model → primary
+        executor → executor_model → primary
+        summarizer → summarizer_model → primary
 
-    def _get_adapter(self, role: str) -> BaseLLMAdapter:
-        if role not in self._adapters:
-            config = getattr(self.role_config, role, None)
-            if not config:
-                raise ValueError(f"Unknown role: {role}")
-            self._adapters[role] = LLMAdapterFactory.create(config)
-        return self._adapters[role]
+    单模型模式 (multi_model_enabled=False 或 agent_settings 未提供):
+        所有 chat_as_* 直接回退到 primary（从 settings.ai 读取）
+
+    调试日志打印格式: [role] resolved to [field] (provider/model)
+    不打印 API key 等敏感信息。
+    """
+
+    def __init__(
+        self,
+        role_config: Optional[RoleModelConfig] = None,
+        agent_settings: Optional[Any] = None,
+    ):
+        self.role_config = role_config or RoleModelConfig()
+        self.agent_settings = agent_settings
+        self._adapter_cache: Dict[str, BaseLLMAdapter] = {}
+
+    def _is_multi_model_enabled(self) -> bool:
+        """检查是否启用多模型模式"""
+        if self.agent_settings is None:
+            return False
+        return getattr(self.agent_settings, "multi_model_enabled", False)
+
+    def _resolve_primary_model_config(self) -> ModelConfig:
+        """从 settings.ai 解析主模型配置（默认模型）"""
+        primary = ModelConfig(
+            provider=ModelProvider.OPENAI,
+            model_name="gpt-4",
+            base_url="https://api.openai.com/v1",
+        )
+        if self.agent_settings is None:
+            return primary
+
+        ai_config = getattr(self.agent_settings, "ai", None)
+        if ai_config is None:
+            return primary
+
+        if isinstance(ai_config, dict):
+            primary.provider = ModelProvider(ai_config.get("provider", "openai"))
+            primary.model_name = ai_config.get("model", primary.model_name)
+            primary.api_key = ai_config.get("api_key")
+            primary.base_url = ai_config.get("base_url", primary.base_url)
+            primary.temperature = ai_config.get("temperature", primary.temperature)
+            primary.max_tokens = ai_config.get("max_tokens", primary.max_tokens)
+            primary.timeout = ai_config.get("timeout", primary.timeout)
+        return primary
+
+    def _get_model_config(self, role_name: str) -> Optional[ModelConfig]:
+        """从 agent_settings 获取指定角色的模型配置"""
+        if self.agent_settings is None:
+            return getattr(self.role_config, role_name, None)
+
+        role_field_map = {
+            "router": "router_model",
+            "planner": "planner_model",
+            "analyst": "analyst_model",
+            "judge": "judge_model",
+            "executor": "executor_model",
+            "summarizer": "summarizer_model",
+        }
+        field_name = role_field_map.get(role_name, role_name)
+        raw = getattr(self.agent_settings, field_name, None)
+        if raw is None:
+            return getattr(self.role_config, role_name, None)
+
+        if isinstance(raw, ModelConfig):
+            return raw
+        if isinstance(raw, dict):
+            return ModelConfig(**raw)
+
+        from app.services.settings import AgentModelSettings
+
+        if isinstance(raw, AgentModelSettings):
+            return ModelConfig(
+                provider=ModelProvider(raw.provider),
+                model_name=raw.model_name,
+                api_key=raw.api_key,
+                base_url=raw.base_url or "https://api.openai.com/v1",
+                temperature=raw.temperature,
+                max_tokens=raw.max_tokens,
+                timeout=raw.timeout,
+                fallback_model=raw.fallback_model,
+            )
+        return None
+
+    def _resolve_role_model_config(self, role: str) -> ModelConfig:
+        """解析角色对应的模型配置，统一回退入口
+
+        角色优先用自己的模型配置，未配置时按链回退到 primary。
+        multi_model_enabled=False 时直接返回 primary。
+        """
+        primary = self._resolve_primary_model_config()
+
+        if not self._is_multi_model_enabled():
+            print(f"[LLM] multi_model_enabled=False, role={role} → primary")
+            return primary
+
+        fallback_chains = {
+            "router": ["router_model", "planner_model"],
+            "planner": ["planner_model"],
+            "analyst": ["analyst_model", "summarizer_model"],
+            "judge": ["judge_model", "analyst_model", "summarizer_model"],
+        }
+
+        chain = fallback_chains.get(role, [])
+        for field_name in chain:
+            cfg = self._get_model_config(field_name)
+            if cfg and cfg.model_name:
+                print(
+                    f"[LLM] role={role} resolved to {field_name} ({cfg.provider}/{cfg.model_name})"
+                )
+                return cfg
+
+        print(
+            f"[LLM] role={role} fallback to primary ({primary.provider}/{primary.model_name})"
+        )
+        return primary
+
+    def _create_adapter(self, config: ModelConfig) -> BaseLLMAdapter:
+        """根据配置创建 LLM adapter（不缓存，每次新建）"""
+        return LLMAdapterFactory.create(config)
+
+    # ---- 角色方法 ----
+
+    async def chat_as_router(
+        self,
+        messages: List[Message],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResponse:
+        """路由角色: 决定任务分发给哪个模型处理"""
+        cfg = self._resolve_role_model_config("router")
+        adapter = self._create_adapter(cfg)
+        return await adapter.chat(messages, temperature, max_tokens)
+
+    async def chat_as_planner(
+        self,
+        messages: List[Message],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResponse:
+        """规划角色: 制定执行计划和任务拆解"""
+        cfg = self._resolve_role_model_config("planner")
+        adapter = self._create_adapter(cfg)
+        return await adapter.chat(messages, temperature, max_tokens)
+
+    async def chat_as_analyst(
+        self,
+        messages: List[Message],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResponse:
+        """分析角色: 分析执行结果，生成结构化报告"""
+        cfg = self._resolve_role_model_config("analyst")
+        adapter = self._create_adapter(cfg)
+        return await adapter.chat(messages, temperature, max_tokens)
+
+    async def chat_as_judge(
+        self,
+        messages: List[Message],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResponse:
+        """评判角色: 评估风险、决策和推荐"""
+        cfg = self._resolve_role_model_config("judge")
+        adapter = self._create_adapter(cfg)
+        return await adapter.chat(messages, temperature, max_tokens)
+
+    # ---- 兼容方法 ----
+
+    async def planner_chat(
+        self,
+        messages: List[Message],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResponse:
+        """兼容方法，等同于 chat_as_planner"""
+        return await self.chat_as_planner(messages, temperature, max_tokens)
+
+    async def executor_chat(
+        self,
+        messages: List[Message],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResponse:
+        """执行角色: 执行具体命令和工具调用"""
+        cfg = self._resolve_role_model_config("executor")
+        adapter = self._create_adapter(cfg)
+        return await adapter.chat(messages, temperature, max_tokens)
+
+    async def summarizer_chat(
+        self,
+        messages: List[Message],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResponse:
+        """总结角色: 汇总结果生成摘要"""
+        cfg = self._resolve_role_model_config("summarizer")
+        adapter = self._create_adapter(cfg)
+        return await adapter.chat(messages, temperature, max_tokens)
 
     async def chat_with_role(
         self,
@@ -468,120 +664,10 @@ class UnifiedLLMAdapter:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
     ) -> LLMResponse:
-        adapter = self._get_adapter(role)
-        config = getattr(self.role_config, role)
-
-        try:
-            return await adapter.chat(messages, temperature, max_tokens)
-        except Exception as e:
-            if config.fallback_model and config.model_name != config.fallback_model:
-                fallback_config = ModelConfig(
-                    provider=config.provider,
-                    model_name=config.fallback_model,
-                    api_key=config.api_key,
-                    base_url=config.base_url,
-                    temperature=config.temperature,
-                    max_tokens=config.max_tokens,
-                    timeout=config.timeout,
-                    fallback_model=None,
-                )
-                fallback_adapter = LLMAdapterFactory.create(fallback_config)
-                return await fallback_adapter.chat(messages, temperature, max_tokens)
-            raise
-
-    async def planner_chat(
-        self,
-        messages: List[Message],
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-    ) -> LLMResponse:
-        return await self.chat_with_role("planner", messages, temperature, max_tokens)
-
-    async def executor_chat(
-        self,
-        messages: List[Message],
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-    ) -> LLMResponse:
-        return await self.chat_with_role("executor", messages, temperature, max_tokens)
-
-    async def summarizer_chat(
-        self,
-        messages: List[Message],
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-    ) -> LLMResponse:
-        return await self.chat_with_role(
-            "summarizer", messages, temperature, max_tokens
-        )
-
-    async def chat_as_router(
-        self,
-        messages: List[Message],
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-    ) -> LLMResponse:
-        role = "router"
-        if (
-            not hasattr(self.role_config, role)
-            or getattr(self.role_config, role) is None
-        ):
-            return await self.chat_with_role(
-                "planner", messages, temperature, max_tokens
-            )
-        return await self.chat_with_role(role, messages, temperature, max_tokens)
-
-    async def chat_as_planner(
-        self,
-        messages: List[Message],
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-    ) -> LLMResponse:
-        role = "planner"
-        if (
-            not hasattr(self.role_config, role)
-            or getattr(self.role_config, role) is None
-        ):
-            return await self.chat_with_role(
-                "planner", messages, temperature, max_tokens
-            )
-        return await self.chat_with_role(role, messages, temperature, max_tokens)
-
-    async def chat_as_analyst(
-        self,
-        messages: List[Message],
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-    ) -> LLMResponse:
-        role = "analyst"
-        if (
-            not hasattr(self.role_config, role)
-            or getattr(self.role_config, role) is None
-        ):
-            if hasattr(self.role_config, "summarizer") and self.role_config.summarizer:
-                return await self.chat_with_role(
-                    "summarizer", messages, temperature, max_tokens
-                )
-            return await self.chat_with_role(
-                "planner", messages, temperature, max_tokens
-            )
-        return await self.chat_with_role(role, messages, temperature, max_tokens)
-
-    async def chat_as_judge(
-        self,
-        messages: List[Message],
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-    ) -> LLMResponse:
-        role = "judge"
-        if (
-            not hasattr(self.role_config, role)
-            or getattr(self.role_config, role) is None
-        ):
-            return await self.chat_with_role(
-                "planner", messages, temperature, max_tokens
-            )
-        return await self.chat_with_role(role, messages, temperature, max_tokens)
+        """通用角色方法，通过名字路由"""
+        cfg = self._resolve_role_model_config(role)
+        adapter = self._create_adapter(cfg)
+        return await adapter.chat(messages, temperature, max_tokens)
 
     async def chat(
         self,
@@ -591,19 +677,21 @@ class UnifiedLLMAdapter:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
     ) -> LLMResponse:
+        """直接指定 provider/model 的通用 chat，不走角色模型解析"""
+        primary = self._resolve_primary_model_config()
         if provider is None:
-            provider = self.role_config.planner.provider
+            provider = primary.provider
         if model_name is None:
-            model_name = self.role_config.planner.model_name
+            model_name = primary.model_name
 
         config = ModelConfig(
             provider=provider,
             model_name=model_name,
-            api_key=self.role_config.planner.api_key,
-            base_url=self.role_config.planner.base_url,
-            temperature=temperature or self.role_config.planner.temperature,
-            max_tokens=max_tokens or self.role_config.planner.max_tokens,
-            timeout=self.role_config.planner.timeout,
+            api_key=primary.api_key,
+            base_url=primary.base_url,
+            temperature=temperature or primary.temperature,
+            max_tokens=max_tokens or primary.max_tokens,
+            timeout=primary.timeout,
         )
-        adapter = LLMAdapterFactory.create(config)
+        adapter = self._create_adapter(config)
         return await adapter.chat(messages, temperature, max_tokens)

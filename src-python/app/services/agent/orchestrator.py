@@ -1,4 +1,21 @@
-"""Agent Orchestrator - 串起全流程"""
+"""Agent Orchestrator - 串起全流程
+
+职责:
+  - AgentOrchestrator 是 Agent 执行的总导演
+  - 持有 skill_registry、tool_registry、planner、executor
+  - run() 方法完成: 解析技能 → 生成计划 → 执行计划 → 收集结果
+
+执行流程（run 方法）:
+  1. _parse_skills: 解析任务匹配的 skills
+  2. _build_context: 构建 SSH 执行上下文
+  3. planner.plan(): 生成执行计划
+  4. executor.execute_plan(): 按计划执行工具链
+  5. 组装 FinalReport: plan / traces / final / raw_summary
+
+tool_registry 注入:
+  - /agent/run 传入 runtime_registry（合并了 internal + MCP）
+  - 如果未传入，默认使用 get_default_registry()
+"""
 
 from datetime import datetime
 from enum import Enum

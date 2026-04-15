@@ -1,6 +1,14 @@
 /**
  * Agent 服务
- * 调用后端 Agent API
+ *
+ * 本模块负责 Agent 模式下的后端 API 调用映射：
+ *   - runAgentTask    → /agent/run
+ *   - getAgentContext  → /agent/context
+ *   - getTools        → /agent/tools
+ *   - getSkills       → /agent/skills
+ *
+ * 普通聊天模式仍由 aiService.ts 的 chatStream() 处理，
+ * Agent 模式不介入普通聊天的 provider/model 切换逻辑。
  */
 
 import type {
@@ -84,47 +92,37 @@ export class AgentService {
   }
 
   /**
-   * 获取 Agent 配置
-   */
-  public async getAgentSettings(): Promise<any> {
-    try {
-      const settings = await invoke('read_settings_file');
-      let parsed: any = {};
-
-      if (typeof settings === 'string') {
-        parsed = JSON.parse(settings || '{}');
-      } else if (settings && typeof settings === 'object') {
-        if (settings.content) {
-          parsed = JSON.parse(settings.content || '{}');
-        } else {
-          parsed = settings;
-        }
-      }
-
-      return parsed.agent || null;
-    } catch (error) {
-      console.error('Failed to get agent settings:', error);
-      return null;
-    }
-  }
-
-  /**
    * 统一读取 settings JSON
+   *
+   * 兼容后端返回的两种格式：
+   *   - string 格式（直接是 JSON 文本）
+   *   - { content: string } 格式
    */
   public async readSettingsJson(): Promise<any> {
     try {
       const result = await invoke('read_settings_file');
       if (typeof result === 'string') {
-        return JSON.parse(result);
+        return JSON.parse(result || '{}');
       }
-      if (result && result.content) {
-        return JSON.parse(result.content);
+      if (result && typeof result === 'object') {
+        if (result.content) {
+          return JSON.parse(result.content);
+        }
+        return result;
       }
-      return result || {};
+      return {};
     } catch (error) {
       console.error('Failed to read settings:', error);
       return {};
     }
+  }
+
+  /**
+   * 获取 Agent 配置
+   */
+  public async getAgentSettings(): Promise<any> {
+    const settings = await this.readSettingsJson();
+    return settings.agent || null;
   }
 }
 

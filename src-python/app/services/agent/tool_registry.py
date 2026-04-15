@@ -1,4 +1,16 @@
-"""Agent Tool 系统 - 注册表与结果定义"""
+"""Agent Tool 系统 - 注册中心与结果定义
+
+职责分层:
+  - ToolRegistry: 工具注册表，管理所有可用工具和执行器
+  - get_default_registry(): 返回内置工具注册表（system/detection/log/file/command）
+  - get_runtime_registry(): 返回合并了 MCP tools 的运行时注册表
+  - load_mcp_tools_if_enabled(): 根据设置加载 MCP tools（如启用）
+
+执行链路:
+  1. orchestrator 持有运行时 registry
+  2. executor.execute_plan() 调用 registry.execute_tool()
+  3. execute_tool() 优先走 _executors（MCP tools），再走 _tools（内置 BaseTool）
+"""
 
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -154,6 +166,30 @@ class ToolRegistry:
             self._executors[name] = executor
 
 
+def _get_mcp_enabled_and_config(settings: Any) -> tuple[bool, Dict[str, Any]]:
+    """从 settings 中提取 mcp_enabled 标志和 mcp_config
+
+    Returns:
+        (mcp_enabled, mcp_config)
+    """
+    mcp_enabled = False
+    mcp_config: Dict[str, Any] = {}
+
+    if hasattr(settings, "mcp_enabled"):
+        mcp_enabled = settings.mcp_enabled
+    elif hasattr(settings, "agent") and settings.agent:
+        mcp_enabled = getattr(settings.agent, "mcp_enabled", False)
+
+    if hasattr(settings, "mcp") and settings.mcp:
+        mcp_config = (
+            dict(settings.mcp) if not isinstance(settings.mcp, dict) else settings.mcp
+        )
+    elif hasattr(settings, "agent") and settings.agent:
+        mcp_config = getattr(settings.agent, "mcp", {}) or {}
+
+    return mcp_enabled, mcp_config
+
+
 async def load_mcp_tools(mcp_config: Dict[str, Any]) -> ToolRegistry:
     """加载 MCP tools (以 executor 方式注册)
 
@@ -196,7 +232,10 @@ async def load_mcp_tools(mcp_config: Dict[str, Any]) -> ToolRegistry:
 
 
 async def load_mcp_tools_if_enabled(settings: Any) -> ToolRegistry:
-    """根据设置加载 MCP tools (如果启用)
+    """根据设置加载 MCP tools（如 mcp_enabled=True）
+
+    内部调用 _get_mcp_enabled_and_config 统一读取开关和配置。
+    MCP 未启用或无配置时返回空 registry，不抛异常。
 
     Args:
         settings: AppSettings 实例
@@ -205,24 +244,12 @@ async def load_mcp_tools_if_enabled(settings: Any) -> ToolRegistry:
         ToolRegistry: MCP tools 注册表（可能为空）
     """
     try:
-        mcp_enabled = False
-        if hasattr(settings, "mcp_enabled"):
-            mcp_enabled = settings.mcp_enabled
-        elif hasattr(settings, "agent") and settings.agent:
-            mcp_enabled = getattr(settings.agent, "mcp_enabled", False)
-
-        if not mcp_enabled:
+        mcp_enabled, mcp_config = _get_mcp_enabled_and_config(settings)
+        if not mcp_enabled or not mcp_config:
             return ToolRegistry()
-
-        mcp_config = getattr(settings, "mcp", None) or {}
-        if not mcp_config and hasattr(settings, "agent"):
-            mcp_config = getattr(settings.agent, "mcp", {}) or {}
-
-        if mcp_config:
-            return await load_mcp_tools(mcp_config)
+        return await load_mcp_tools(mcp_config)
     except Exception:
         pass
-
     return ToolRegistry()
 
 

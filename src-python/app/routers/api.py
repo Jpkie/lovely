@@ -1295,6 +1295,7 @@ def _get_agent_config() -> Optional[AgentSettings]:
 async def agent_run(req: AgentRunRequest):
     """运行 Agent 任务"""
     ssh = get_ssh_manager()
+    global _app_settings
     agent_config = _get_agent_config()
 
     context = dict(req.context)
@@ -1307,7 +1308,19 @@ async def agent_run(req: AgentRunRequest):
             max_skills_per_task=agent_config.planner.max_skills_per_task,
         )
 
-    orchestrator = AgentOrchestrator(planner_config=planner_config)
+    runtime_registry = None
+    try:
+        from app.services.agent.tool_registry import get_runtime_registry
+
+        settings = _app_settings if _app_settings is not None else load_settings()
+        runtime_registry = await get_runtime_registry(settings)
+    except Exception:
+        pass
+
+    orchestrator = AgentOrchestrator(
+        planner_config=planner_config,
+        tool_registry=runtime_registry,
+    )
 
     agent_request = AgentRequest(
         task=req.task,

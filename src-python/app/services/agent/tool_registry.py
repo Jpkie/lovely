@@ -155,13 +155,13 @@ class ToolRegistry:
 
 
 async def load_mcp_tools(mcp_config: Dict[str, Any]) -> ToolRegistry:
-    """加载 MCP tools
+    """加载 MCP tools (以 executor 方式注册)
 
     Args:
         mcp_config: MCP 配置信息
 
     Returns:
-        ToolRegistry: 包含 MCP tools 的注册表
+        ToolRegistry: 包含 MCP executor 的注册表
     """
     registry = ToolRegistry()
     try:
@@ -171,25 +171,25 @@ async def load_mcp_tools(mcp_config: Dict[str, Any]) -> ToolRegistry:
         if adapter.enabled and await adapter.initialize():
             tools = await adapter.list_tools()
             for tool in tools:
-                from .schemas import SkillDefinition, SkillParameter, SkillType
+                tool_name = tool.name
 
-                skill_def = SkillDefinition(
-                    id=f"mcp_{tool.name}",
-                    name=tool.name,
-                    description=tool.description,
-                    skill_type=SkillType.CUSTOM,
-                    parameters=[
-                        SkillParameter(
-                            name=p.get("name", ""),
-                            type=p.get("type", "string"),
-                            description=p.get("description", ""),
-                            required=p.get("required", False),
+                async def make_executor(t: Any):
+                    async def executor(
+                        params: Dict[str, Any], ctx: Dict[str, Any]
+                    ) -> AgentToolResult:
+                        result = await adapter.call_tool(t.name, params)
+                        return AgentToolResult(
+                            tool_name=t.name,
+                            status=ToolStatus.SUCCESS
+                            if result.success
+                            else ToolStatus.ERROR,
+                            output=result.content,
+                            error=result.error if result.is_error else None,
                         )
-                        for p in tool.input_schema.get("properties", {}).values()
-                    ],
-                    enabled=tool.enabled,
-                )
-                registry.register(skill_def)
+
+                    return executor
+
+                registry.register_executor(tool_name, await make_executor(tool))
     except Exception:
         pass
     return registry
@@ -202,10 +202,8 @@ async def load_mcp_tools_if_enabled(settings: Any) -> ToolRegistry:
         settings: AppSettings 实例
 
     Returns:
-        ToolRegistry: 合并后的注册表
+        ToolRegistry: MCP tools 注册表（可能为空）
     """
-    registry = ToolRegistry()
-
     try:
         mcp_enabled = False
         if hasattr(settings, "mcp_enabled"):
@@ -214,7 +212,7 @@ async def load_mcp_tools_if_enabled(settings: Any) -> ToolRegistry:
             mcp_enabled = getattr(settings.agent, "mcp_enabled", False)
 
         if not mcp_enabled:
-            return registry
+            return ToolRegistry()
 
         mcp_config = getattr(settings, "mcp", None) or {}
         if not mcp_config and hasattr(settings, "agent"):
@@ -225,7 +223,7 @@ async def load_mcp_tools_if_enabled(settings: Any) -> ToolRegistry:
     except Exception:
         pass
 
-    return registry
+    return ToolRegistry()
 
 
 def get_default_registry() -> ToolRegistry:
@@ -244,4 +242,31 @@ def get_default_registry() -> ToolRegistry:
     register_log_tools(registry)
     register_file_tools(registry)
     register_command_tools(registry)
+    return registry
+
+
+async def get_runtime_registry(settings: Any) -> ToolRegistry:
+    """获取运行时 registry，合并 internal + MCP tools
+
+    1. 创建 internal registry
+    2. 加载 MCP tools（如启用）
+    3. 合并后返回
+
+    Args:
+        settings: AppSettings 实例
+
+    Returns:
+        ToolRegistry: 合并后的运行时注册表
+    """
+    registry = get_default_registry()
+
+    try:
+        mcp_tools_registry = await load_mcp_tools_if_enabled(settings)
+        if mcp_tools_registry and (
+            mcp_tools_registry._tools or mcp_tools_registry._executors
+        ):
+            registry.merge(mcp_tools_registry)
+    except Exception:
+        pass
+
     return registry

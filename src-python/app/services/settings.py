@@ -68,13 +68,10 @@ class AgentSettings(BaseModel):
     mcp_enabled: bool = False
     multi_model_enabled: bool = False
     planner: AgentPlannerSettings = Field(default_factory=AgentPlannerSettings)
-    planner_model: AgentModelSettings = Field(default_factory=AgentModelSettings)
     router_model: AgentModelSettings = Field(
         default_factory=lambda: AgentModelSettings(model_name="gpt-4")
     )
-    planner_model_role: AgentModelSettings = Field(
-        default_factory=lambda: AgentModelSettings(model_name="gpt-4")
-    )
+    planner_model: AgentModelSettings = Field(default_factory=AgentModelSettings)
     analyst_model: AgentModelSettings = Field(
         default_factory=lambda: AgentModelSettings(model_name="gpt-3.5-turbo")
     )
@@ -90,7 +87,13 @@ class AgentSettings(BaseModel):
 
     def __init__(self, **data):
         super().__init__(**data)
-        if self.summarizer_model and not self.analyst_model:
+        if getattr(self, "planner_model_role", None) and not getattr(
+            self, "planner_model", None
+        ):
+            self.planner_model = self.planner_model_role
+        if getattr(self, "summarizer_model", None) and not getattr(
+            self, "analyst_model", None
+        ):
             self.analyst_model = self.summarizer_model
 
 

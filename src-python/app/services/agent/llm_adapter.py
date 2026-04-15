@@ -515,6 +515,74 @@ class UnifiedLLMAdapter:
             "summarizer", messages, temperature, max_tokens
         )
 
+    async def chat_as_router(
+        self,
+        messages: List[Message],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResponse:
+        role = "router"
+        if (
+            not hasattr(self.role_config, role)
+            or getattr(self.role_config, role) is None
+        ):
+            return await self.chat_with_role(
+                "planner", messages, temperature, max_tokens
+            )
+        return await self.chat_with_role(role, messages, temperature, max_tokens)
+
+    async def chat_as_planner(
+        self,
+        messages: List[Message],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResponse:
+        role = "planner"
+        if (
+            not hasattr(self.role_config, role)
+            or getattr(self.role_config, role) is None
+        ):
+            return await self.chat_with_role(
+                "planner", messages, temperature, max_tokens
+            )
+        return await self.chat_with_role(role, messages, temperature, max_tokens)
+
+    async def chat_as_analyst(
+        self,
+        messages: List[Message],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResponse:
+        role = "analyst"
+        if (
+            not hasattr(self.role_config, role)
+            or getattr(self.role_config, role) is None
+        ):
+            if hasattr(self.role_config, "summarizer") and self.role_config.summarizer:
+                return await self.chat_with_role(
+                    "summarizer", messages, temperature, max_tokens
+                )
+            return await self.chat_with_role(
+                "planner", messages, temperature, max_tokens
+            )
+        return await self.chat_with_role(role, messages, temperature, max_tokens)
+
+    async def chat_as_judge(
+        self,
+        messages: List[Message],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResponse:
+        role = "judge"
+        if (
+            not hasattr(self.role_config, role)
+            or getattr(self.role_config, role) is None
+        ):
+            return await self.chat_with_role(
+                "planner", messages, temperature, max_tokens
+            )
+        return await self.chat_with_role(role, messages, temperature, max_tokens)
+
     async def chat(
         self,
         messages: List[Message],

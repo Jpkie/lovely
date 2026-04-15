@@ -155,7 +155,7 @@ class ToolRegistry:
 
 
 async def load_mcp_tools(mcp_config: Dict[str, Any]) -> ToolRegistry:
-    """加载 MCP tools (第一版返回空注册表，接口存在)
+    """加载 MCP tools
 
     Args:
         mcp_config: MCP 配置信息
@@ -164,6 +164,67 @@ async def load_mcp_tools(mcp_config: Dict[str, Any]) -> ToolRegistry:
         ToolRegistry: 包含 MCP tools 的注册表
     """
     registry = ToolRegistry()
+    try:
+        from .mcp import MCPAdapter
+
+        adapter = MCPAdapter.from_config(mcp_config)
+        if adapter.enabled and await adapter.initialize():
+            tools = await adapter.list_tools()
+            for tool in tools:
+                from .schemas import SkillDefinition, SkillParameter, SkillType
+
+                skill_def = SkillDefinition(
+                    id=f"mcp_{tool.name}",
+                    name=tool.name,
+                    description=tool.description,
+                    skill_type=SkillType.CUSTOM,
+                    parameters=[
+                        SkillParameter(
+                            name=p.get("name", ""),
+                            type=p.get("type", "string"),
+                            description=p.get("description", ""),
+                            required=p.get("required", False),
+                        )
+                        for p in tool.input_schema.get("properties", {}).values()
+                    ],
+                    enabled=tool.enabled,
+                )
+                registry.register(skill_def)
+    except Exception:
+        pass
+    return registry
+
+
+async def load_mcp_tools_if_enabled(settings: Any) -> ToolRegistry:
+    """根据设置加载 MCP tools (如果启用)
+
+    Args:
+        settings: AppSettings 实例
+
+    Returns:
+        ToolRegistry: 合并后的注册表
+    """
+    registry = ToolRegistry()
+
+    try:
+        mcp_enabled = False
+        if hasattr(settings, "mcp_enabled"):
+            mcp_enabled = settings.mcp_enabled
+        elif hasattr(settings, "agent") and settings.agent:
+            mcp_enabled = getattr(settings.agent, "mcp_enabled", False)
+
+        if not mcp_enabled:
+            return registry
+
+        mcp_config = getattr(settings, "mcp", None) or {}
+        if not mcp_config and hasattr(settings, "agent"):
+            mcp_config = getattr(settings.agent, "mcp", {}) or {}
+
+        if mcp_config:
+            return await load_mcp_tools(mcp_config)
+    except Exception:
+        pass
+
     return registry
 
 

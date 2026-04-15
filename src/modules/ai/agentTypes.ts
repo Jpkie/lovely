@@ -89,12 +89,60 @@ export interface StructuredOutput {
   steps: StepResult[];
 }
 
+// Agent 计划步骤
+export interface AgentPlanStep {
+  id: string;
+  step_number: number;
+  description: string;
+  skill_id?: string;
+  skill_name?: string;
+  tool_name?: string;
+  parameters: Record<string, any>;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+}
+
+// Agent 执行轨迹
+export interface AgentExecutionTrace {
+  id: string;
+  plan_id: string;
+  step_id: string;
+  step_number: number;
+  tool_name: string;
+  tool_result_summary?: string;
+  output_preview?: string;
+  status: string;
+  started_at?: string;
+  completed_at?: string;
+  duration_ms: number;
+  success: boolean;
+  error?: string;
+}
+
+// Agent 最终响应
+export interface AgentFinalResponse {
+  summary: string;
+  evidence: Record<string, any>[];
+  risks: string[];
+  recommendations: string[];
+  commands: string[];
+  next_actions: string[];
+}
+
 // Agent 运行结果
 export interface AgentRunResult {
   id: string;
   request_id: string;
   task: string;
   status: 'running' | 'completed' | 'failed';
+  skill_name?: string;
+  plan?: {
+    id: string;
+    request_id: string;
+    steps: AgentPlanStep[];
+    status: string;
+  };
+  traces: AgentExecutionTrace[];
+  final?: AgentFinalResponse;
   skill_results: SkillResult[];
   structured_output: AgentStructuredOutput;
   total_duration_ms: number;

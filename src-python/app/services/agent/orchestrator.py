@@ -6,7 +6,12 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 import uuid
 
-from .schemas import AgentRequest, AgentResponse
+from .schemas import (
+    AgentRequest,
+    AgentResponse,
+    AgentExecutionTrace,
+    AgentFinalResponse,
+)
 from .skills import get_default_skill_registry, SkillRegistry
 from .planner import BasePlanner, PlannerConfig, create_planner
 from .executor import Executor, ExecutionResult, ExecutionStatus
@@ -48,6 +53,10 @@ class FinalReport(BaseModel):
     request_id: str
     task: str
     status: str
+    skill_name: Optional[str] = None
+    plan: Optional[Dict[str, Any]] = None
+    traces: List[Dict[str, Any]] = Field(default_factory=list)
+    final: Optional[Dict[str, Any]] = None
     skill_results: List[StructuredResult] = Field(default_factory=list)
     raw_summary: str = ""
     structured_output: Dict[str, Any] = Field(default_factory=dict)
@@ -235,9 +244,32 @@ class AgentOrchestrator:
             report.raw_summary = "未找到匹配 skill，请尝试其他任务描述"
             return report
 
+        skill_name = skills[0].name if skills else "unknown"
+        report.skill_name = skill_name
         context = self._build_context(request)
 
         plan = await self.planner.plan(request, skills, context)
+
+        plan_dict = None
+        if hasattr(plan, "steps"):
+            plan_dict = {
+                "id": plan.id,
+                "request_id": plan.request_id,
+                "steps": [
+                    {
+                        "id": s.id,
+                        "step_number": s.step_number,
+                        "description": s.description,
+                        "skill_id": s.skill_id,
+                        "tool_name": s.tool_name,
+                        "parameters": s.parameters,
+                        "status": s.status,
+                    }
+                    for s in plan.steps
+                ],
+                "status": plan.status,
+            }
+        report.plan = plan_dict
 
         execution_result = await self.executor.execute_plan(plan, request, context)
 
@@ -275,6 +307,68 @@ class AgentOrchestrator:
         report.skill_results = skill_results
         report.structured_output = execution_result.structured_output
         report.total_duration_ms = execution_result.total_duration_ms
+
+        traces = []
+        for step_exec in execution_result.step_executions:
+            output_preview = None
+            tool_result_summary = None
+            if step_exec.result and step_exec.result.output:
+                output_str = str(step_exec.result.output)
+                output_preview = (
+                    output_str[:200] + "..." if len(output_str) > 200 else output_str
+                )
+                tool_result_summary = (
+                    output_str[:500] if len(output_str) > 500 else output_str
+                )
+
+            trace_entry = {
+                "id": str(uuid.uuid4()),
+                "plan_id": execution_result.plan_id,
+                "step_id": step_exec.id,
+                "step_number": step_exec.step_number,
+                "tool_name": step_exec.tool_name,
+                "tool_result_summary": tool_result_summary,
+                "output_preview": output_preview,
+                "status": step_exec.status.value
+                if hasattr(step_exec.status, "value")
+                else str(step_exec.status),
+                "started_at": step_exec.started_at.isoformat()
+                if step_exec.started_at
+                else None,
+                "completed_at": step_exec.completed_at.isoformat()
+                if step_exec.completed_at
+                else None,
+                "duration_ms": step_exec.duration_ms,
+                "success": step_exec.status == ExecutionStatus.COMPLETED,
+                "error": step_exec.error,
+            }
+            traces.append(trace_entry)
+        report.traces = traces
+
+        all_recommendations = []
+        all_risks = []
+        all_commands = []
+        all_evidence = []
+        for sr in skill_results:
+            all_recommendations.extend(sr.recommendations)
+            if sr.risk_level == "high":
+                all_risks.append(f"高风险: {sr.skill_name}")
+            elif sr.risk_level == "medium":
+                all_risks.append(f"中风险: {sr.skill_name}")
+            for finding in sr.findings:
+                all_evidence.append(finding)
+
+        report.final = {
+            "summary": self.executor.generate_summary(execution_result, {}),
+            "evidence": all_evidence,
+            "risks": all_risks,
+            "recommendations": all_recommendations[:10],
+            "commands": all_commands,
+            "next_actions": [
+                "持续监控系统状态",
+                "定期执行安全审计",
+            ],
+        }
 
         report.raw_summary = self._generate_final_summary(
             request, execution_result, skill_results

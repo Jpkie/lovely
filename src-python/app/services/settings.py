@@ -64,14 +64,34 @@ class AgentSettings(BaseModel):
     """Agent 设置"""
 
     enabled: bool = True
+    skills_enabled: bool = True
+    mcp_enabled: bool = False
+    multi_model_enabled: bool = False
     planner: AgentPlannerSettings = Field(default_factory=AgentPlannerSettings)
     planner_model: AgentModelSettings = Field(default_factory=AgentModelSettings)
+    router_model: AgentModelSettings = Field(
+        default_factory=lambda: AgentModelSettings(model_name="gpt-4")
+    )
+    planner_model_role: AgentModelSettings = Field(
+        default_factory=lambda: AgentModelSettings(model_name="gpt-4")
+    )
+    analyst_model: AgentModelSettings = Field(
+        default_factory=lambda: AgentModelSettings(model_name="gpt-3.5-turbo")
+    )
+    judge_model: AgentModelSettings = Field(
+        default_factory=lambda: AgentModelSettings(model_name="gpt-4")
+    )
     executor_model: AgentModelSettings = Field(
         default_factory=lambda: AgentModelSettings(model_name="gpt-3.5-turbo")
     )
     summarizer_model: AgentModelSettings = Field(
         default_factory=lambda: AgentModelSettings(model_name="gpt-3.5-turbo")
     )
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        if self.summarizer_model and not self.analyst_model:
+            self.analyst_model = self.summarizer_model
 
 
 class AppSettings(BaseModel):

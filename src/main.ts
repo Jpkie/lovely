@@ -2817,6 +2817,103 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
     (window as any).updateAgentSkillButtons?.();
   };
 
+  // 渲染 Agent Plan
+  (window as any).renderAgentPlan = function (plan: any) {
+    const planContent = document.getElementById('agent-plan-content');
+    if (!planContent) return;
+
+    if (!plan || !plan.steps || plan.steps.length === 0) {
+      planContent.innerHTML = '<div class="agent-empty">暂无执行计划</div>';
+      return;
+    }
+
+    planContent.innerHTML = plan.steps.map((step: any) => `
+      <div class="agent-plan-step" data-step-id="${step.id}">
+        <span class="step-number">${step.step_number}</span>
+        <span class="step-desc">${step.description || step.tool_name || '未知步骤'}</span>
+        <span class="step-status status-${step.status}">${step.status}</span>
+      </div>
+    `).join('');
+  };
+
+  // 渲染 Agent Traces
+  (window as any).renderAgentTraces = function (traces: any[]) {
+    const tracesContent = document.getElementById('agent-traces-content');
+    if (!tracesContent) return;
+
+    if (!traces || traces.length === 0) {
+      tracesContent.innerHTML = '<div class="agent-empty">暂无执行轨迹</div>';
+      return;
+    }
+
+    tracesContent.innerHTML = traces.map((trace: any) => {
+      const statusColor = trace.success ? 'var(--success-color)' : 'var(--error-color)';
+      return `
+        <div class="agent-trace-item">
+          <span class="trace-tool" style="font-weight:bold">[${trace.tool_name}]</span>
+          <span class="trace-status" style="color:${statusColor}">${trace.status}</span>
+          <span class="trace-duration">${trace.duration_ms}ms</span>
+          ${trace.output_preview ? `<div class="trace-preview">${trace.output_preview}</div>` : ''}
+          ${trace.error ? `<div class="trace-error" style="color:var(--error-color)">Error: ${trace.error}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  };
+
+  // 渲染 Agent Final
+  (window as any).renderAgentFinal = function (final: any, rawSummary?: string) {
+    const finalContent = document.getElementById('agent-final-content');
+    if (!finalContent) return;
+
+    if (!final) {
+      finalContent.innerHTML = `<pre class="agent-raw-summary">${rawSummary || '（无结果）'}</pre>`;
+      return;
+    }
+
+    const html = `
+      <div class="agent-final-section">
+        <div class="final-summary">${final.summary || rawSummary || '（无摘要）'}</div>
+        ${final.risks && final.risks.length > 0 ? `
+          <div class="final-risks">
+            <h4>风险评估</h4>
+            <ul>${final.risks.map((r: string) => `<li>${r}</li>`).join('')}</ul>
+          </div>
+        ` : ''}
+        ${final.recommendations && final.recommendations.length > 0 ? `
+          <div class="final-recommendations">
+            <h4>建议</h4>
+            <ul>${final.recommendations.map((r: string) => `<li>${r}</li>`).join('')}</ul>
+          </div>
+        ` : ''}
+        ${final.commands && final.commands.length > 0 ? `
+          <div class="final-commands">
+            <h4>可执行命令</h4>
+            <pre>${final.commands.join('\n')}</pre>
+          </div>
+        ` : ''}
+        ${final.next_actions && final.next_actions.length > 0 ? `
+          <div class="final-next-actions">
+            <h4>后续行动</h4>
+            <ul>${final.next_actions.map((a: string) => `<li>${a}</li>`).join('')}</ul>
+          </div>
+        ` : ''}
+      </div>
+    `;
+    finalContent.innerHTML = html;
+  };
+
+  // 继续 Agent 调查
+  (window as any).continueAgentInvestigation = async function () {
+    const inputEl = document.getElementById('agent-task-input') as HTMLTextAreaElement | null;
+    if (!inputEl) return;
+
+    const currentTask = inputEl.value.trim();
+    if (!currentTask) return;
+
+    inputEl.value = currentTask + ' (继续调查)';
+    await (window as any).runAgentTask?.();
+  };
+
   // 执行 Agent 任务
   (window as any).runAgentTask = async function () {
     const inputEl = document.getElementById('agent-task-input') as HTMLTextAreaElement | null;
@@ -2856,48 +2953,27 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
 
       if (runningIndicator) runningIndicator.style.display = 'none';
 
-      const steps = result.structured_output?.steps || [];
-      if (steps.length > 0) {
+      if (result.plan && result.plan.steps && result.plan.steps.length > 0) {
+        if (planSection) planSection.style.display = 'block';
+        (window as any).renderAgentPlan?.(result.plan);
+      }
+
+      if (result.traces && result.traces.length > 0) {
         if (tracesSection) tracesSection.style.display = 'block';
-        const tracesContent = document.getElementById('agent-traces-content');
-        if (tracesContent) {
-          tracesContent.innerHTML = steps.map((step: any) => {
-            const output = step.output ? String(step.output).substring(0, 200) : '';
-            const extra = step.output && String(step.output).length > 200 ? '...' : '';
-            return `
-              <div class="agent-trace-item">
-                <span class="trace-tool">[${step.tool_name}]</span>
-                <span style="color:var(--text-secondary)">${step.status}</span>
-                ${output ? `- ${output}${extra}` : ''}
-                ${step.error ? `<span style="color:var(--error-color)"> Error: ${step.error}</span>` : ''}
-              </div>
-            `;
-          }).join('');
-        }
+        (window as any).renderAgentTraces?.(result.traces);
+      } else if (result.structured_output?.steps && result.structured_output.steps.length > 0) {
+        if (tracesSection) tracesSection.style.display = 'block';
+        (window as any).renderAgentTraces?.(result.structured_output.steps);
       }
 
       if (finalSection) finalSection.style.display = 'block';
-      const finalContent = document.getElementById('agent-final-content');
-      if (finalContent) {
-        const summary = result.raw_summary || '';
-        if (result.skill_results && result.skill_results.length > 0) {
-          const skillInfo = result.skill_results.map((sr: any) =>
-            `${sr.skill_name}: ${sr.summary} (风险: ${sr.risk_level})`
-          ).join('\n');
-          finalContent.textContent = `${summary}\n\n${skillInfo}`;
-        } else {
-          finalContent.textContent = summary || '（无结果）';
-        }
-      }
+      (window as any).renderAgentFinal?.(result.final, result.raw_summary);
 
     } catch (error) {
       if (runningIndicator) runningIndicator.style.display = 'none';
       const msg = error instanceof Error ? error.message : String(error);
       if (finalSection) finalSection.style.display = 'block';
-      const finalContent = document.getElementById('agent-final-content');
-      if (finalContent) {
-        finalContent.textContent = `执行失败：${msg}`;
-      }
+      (window as any).renderAgentFinal?.(null, `执行失败：${msg}`);
     } finally {
       if (runBtn) runBtn.disabled = false;
       agentIsRunning = false;

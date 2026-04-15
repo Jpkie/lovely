@@ -9,8 +9,24 @@
 第一版预留接口，MCP 未配置时系统照常运行。
 """
 
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional
+
 from .mcp_adapter import MCPAdapter, MCPTool, MCPConnectionStatus
-from .mcp_registry import MCPRegistry, MCPToolDefinition
+from .mcp_registry import MCPRegistry, get_enabled_mcp_tools
+
+
+@dataclass
+class MCPToolDefinition:
+    """MCP Tool 定义 (兼容旧接口)"""
+
+    name: str
+    description: str = ""
+    input_schema: Dict[str, Any] = field(default_factory=dict)
+    server_name: str = ""
+    server_id: str = ""
+    enabled: bool = True
+
 
 __all__ = [
     "MCPAdapter",
@@ -18,4 +34,5 @@ __all__ = [
     "MCPConnectionStatus",
     "MCPRegistry",
     "MCPToolDefinition",
+    "get_enabled_mcp_tools",
 ]

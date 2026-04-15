@@ -1323,6 +1323,10 @@ async def agent_run(req: AgentRunRequest):
         "request_id": report.request_id,
         "task": report.task,
         "status": report.status,
+        "skill_name": report.skill_name,
+        "plan": report.plan,
+        "traces": report.traces,
+        "final": report.final,
         "skill_results": [
             {
                 "skill_name": sr.skill_name,
@@ -1333,6 +1337,7 @@ async def agent_run(req: AgentRunRequest):
             }
             for sr in report.skill_results
         ],
+        "raw_summary": report.raw_summary,
         "structured_output": report.structured_output,
         "total_duration_ms": report.total_duration_ms,
         "created_at": report.created_at.isoformat(),
@@ -1401,22 +1406,36 @@ async def agent_get_context():
 
 @router.get("/agent/tools")
 async def agent_get_tools():
-    """获取可用工具列表"""
+    """获取可用工具列表 (内置 + MCP)"""
     registry = get_default_registry()
     tools = registry.list_tools()
 
+    internal_tools = [
+        {
+            "id": t.id,
+            "name": t.name,
+            "description": t.description,
+            "source": "internal",
+            "risk_level": "low",
+            "enabled": getattr(t, "enabled", True),
+        }
+        for t in tools
+    ]
+
+    mcp_tools = []
+    try:
+        from app.services.agent.mcp import get_enabled_mcp_tools
+
+        mcp_tools = get_enabled_mcp_tools()
+    except Exception:
+        pass
+
+    all_tools = internal_tools + mcp_tools
     return {
-        "tools": [
-            {
-                "id": t.id,
-                "name": t.name,
-                "description": t.description,
-                "skill_type": getattr(t, "skill_type", None),
-                "enabled": getattr(t, "enabled", True),
-            }
-            for t in tools
-        ],
-        "count": len(tools),
+        "tools": all_tools,
+        "count": len(all_tools),
+        "internal_count": len(internal_tools),
+        "mcp_count": len(mcp_tools),
     }
 
 

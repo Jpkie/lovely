@@ -275,3 +275,63 @@ class ToolRegistry(BaseModel):
 
     def list_by_type(self, skill_type: SkillType) -> List[SkillDefinition]:
         return [s for s in self.tools.values() if s.skill_type == skill_type]
+
+
+class AgentPlanStep(BaseModel):
+    """Agent 计划步骤 (新版)"""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    step_number: int
+    description: str
+    skill_id: Optional[str] = None
+    skill_name: Optional[str] = None
+    tool_name: Optional[str] = None
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    status: str = "pending"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AgentExecutionTrace(BaseModel):
+    """Agent 执行轨迹 (新版)"""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    plan_id: str
+    step_id: str
+    step_number: int
+    tool_name: str
+    tool_result_summary: Optional[str] = None
+    output_preview: Optional[str] = None
+    status: str = "running"
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None
+    duration_ms: int = 0
+    success: bool = True
+    error: Optional[str] = None
+
+
+class AgentFinalResponse(BaseModel):
+    """Agent 最终响应 (新版)"""
+
+    summary: str
+    evidence: List[Dict[str, Any]] = Field(default_factory=list)
+    risks: List[str] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+    commands: List[str] = Field(default_factory=list)
+    next_actions: List[str] = Field(default_factory=list)
+
+
+class AgentRunResponse(BaseModel):
+    """Agent 运行响应 (完整结构)"""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    request_id: str
+    task: str
+    status: str
+    skill_name: Optional[str] = None
+    plan: Optional[Dict[str, Any]] = None
+    traces: List[AgentExecutionTrace] = Field(default_factory=list)
+    final: Optional[AgentFinalResponse] = None
+    raw_summary: str = ""
+    structured_output: Dict[str, Any] = Field(default_factory=dict)
+    total_duration_ms: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow)

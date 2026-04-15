@@ -89,11 +89,41 @@ export class AgentService {
   public async getAgentSettings(): Promise<any> {
     try {
       const settings = await invoke('read_settings_file');
-      const parsed = JSON.parse(settings.content || '{}');
+      let parsed: any = {};
+
+      if (typeof settings === 'string') {
+        parsed = JSON.parse(settings || '{}');
+      } else if (settings && typeof settings === 'object') {
+        if (settings.content) {
+          parsed = JSON.parse(settings.content || '{}');
+        } else {
+          parsed = settings;
+        }
+      }
+
       return parsed.agent || null;
     } catch (error) {
       console.error('Failed to get agent settings:', error);
       return null;
+    }
+  }
+
+  /**
+   * 统一读取 settings JSON
+   */
+  public async readSettingsJson(): Promise<any> {
+    try {
+      const result = await invoke('read_settings_file');
+      if (typeof result === 'string') {
+        return JSON.parse(result);
+      }
+      if (result && result.content) {
+        return JSON.parse(result.content);
+      }
+      return result || {};
+    } catch (error) {
+      console.error('Failed to read settings:', error);
+      return {};
     }
   }
 }

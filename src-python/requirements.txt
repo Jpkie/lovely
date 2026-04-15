@@ -1,0 +1,19 @@
+# FastAPI and server
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+websockets>=14.0
+
+# SSH
+asyncssh>=2.18.0
+paramiko>=3.5.0
+
+# Encryption
+cryptography>=43.0.0
+
+# Data
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+
+# Utilities
+aiofiles>=24.1.0
+python-multipart>=0.0.26

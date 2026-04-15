@@ -3421,6 +3421,183 @@ ${problemsText}
   }
 
   /**
+   * 显示密码授权对话框
+   */
+  private async showPasswordAuthorizationDialog(): Promise<{ password: string; remember: boolean } | null> {
+    return new Promise((resolve) => {
+      const modal = document.createElement('div');
+      modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10003;
+        padding: 20px;
+      `;
+
+      const sshConnectionManager = (window as any).sshConnectionManager;
+      const connectionStatus = sshConnectionManager?.getConnectionStatus?.();
+      const serverInfo = connectionStatus
+        ? `${connectionStatus.username}@${connectionStatus.host}:${connectionStatus.port}`
+        : '远程服务器';
+
+      modal.innerHTML = `
+        <div style="
+          background: var(--bg-primary);
+          border-radius: 12px;
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+          max-width: 450px;
+          width: 100%;
+          animation: slideUp 0.2s ease-out;
+        ">
+          <div style="
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+          ">
+            <div style="
+              width: 48px;
+              height: 48px;
+              border-radius: 50%;
+              background: rgba(239, 68, 68, 0.1);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 24px;
+            ">🔐</div>
+            <div>
+              <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--text-primary);">授权临时 root 权限</h3>
+              <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-secondary);">用于执行修复命令</p>
+            </div>
+          </div>
+
+          <div style="padding: 20px 24px;">
+            <div style="
+              padding: 12px;
+              background: var(--bg-secondary);
+              border-radius: 8px;
+              margin-bottom: 16px;
+              font-size: 13px;
+              color: var(--text-secondary);
+              line-height: 1.6;
+            ">
+              <div style="margin-bottom: 8px;"><strong>目标服务器：</strong>${serverInfo}</div>
+              <div style="margin-bottom: 8px;"><strong>原因：</strong>AI 修复方案需要 sudo/root 权限才能执行</div>
+              <div><strong>说明：</strong>密码仅用于本次会话验证，不会保存到任何地方</div>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+              <label style="display: block; font-size: 13px; font-weight: 500; color: var(--text-primary); margin-bottom: 8px;">
+                输入密码
+              </label>
+              <input type="password" id="fix-auth-password" placeholder="请输入密码" style="
+                width: 100%;
+                padding: 10px 12px;
+                background: var(--bg-tertiary);
+                border: 1px solid var(--border-color);
+                border-radius: 6px;
+                color: var(--text-primary);
+                font-size: 14px;
+                outline: none;
+                box-sizing: border-box;
+              " />
+            </div>
+
+            <div style="
+              padding: 10px 12px;
+              background: rgba(239, 68, 68, 0.1);
+              border-left: 3px solid #ef4444;
+              border-radius: 4px;
+              font-size: 12px;
+              color: var(--text-secondary);
+              line-height: 1.6;
+            ">
+              ⚠️ 请确保您信任此服务器和 AI 生成的修复方案。错误的命令可能导致系统故障。
+            </div>
+          </div>
+
+          <div style="
+            padding: 16px 24px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+          ">
+            <button id="fix-auth-cancel" style="
+              padding: 8px 16px;
+              background: var(--bg-secondary);
+              border: 1px solid var(--border-color);
+              border-radius: 6px;
+              color: var(--text-primary);
+              font-size: 14px;
+              cursor: pointer;
+            ">取消</button>
+            <button id="fix-auth-confirm" style="
+              padding: 8px 16px;
+              background: #ef4444;
+              border: none;
+              border-radius: 6px;
+              color: white;
+              font-size: 14px;
+              cursor: pointer;
+              font-weight: 500;
+            ">确认授权</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+
+      const passwordInput = document.getElementById('fix-auth-password') as HTMLInputElement;
+      const cancelBtn = document.getElementById('fix-auth-cancel');
+      const confirmBtn = document.getElementById('fix-auth-confirm');
+
+      const cleanup = () => {
+        modal.style.opacity = '0';
+        modal.style.transition = 'opacity 0.2s';
+        setTimeout(() => modal.remove(), 200);
+      };
+
+      cancelBtn?.addEventListener('click', () => {
+        cleanup();
+        resolve(null);
+      });
+
+      confirmBtn?.addEventListener('click', () => {
+        const password = passwordInput?.value || '';
+        if (!password.trim()) {
+          passwordInput?.focus();
+          return;
+        }
+        cleanup();
+        resolve({ password, remember: false });
+      });
+
+      passwordInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          confirmBtn?.click();
+        }
+      });
+
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          cleanup();
+          resolve(null);
+        }
+      });
+
+      setTimeout(() => passwordInput?.focus(), 100);
+    });
+  }
+
+  /**
    * 执行修复命令（逐条确认）
    */
   private async executeFixCommands(fixSolution: string): Promise<void> {
@@ -3433,7 +3610,7 @@ ${problemsText}
 
     const confirmed = await this.showConfirm({
       title: '确认批量执行修复命令',
-      message: `AI 生成了 ${commands.length} 条修复命令。将逐条执行，每条命令执行前都会要求您确认。`,
+      message: `AI 生成了 ${commands.length} 条修复命令。授权后将自动逐条执行，失败的命令会尝试替代方案。`,
       description: '此操作将在远程服务器上执行命令',
       confirmText: '开始执行',
       cancelText: '取消',
@@ -3441,6 +3618,11 @@ ${problemsText}
     });
 
     if (!confirmed) return;
+
+    const authResult = await this.showPasswordAuthorizationDialog();
+    if (!authResult) return;
+
+    const { password } = authResult;
 
     const modal = document.createElement('div');
     modal.style.cssText = `
@@ -3475,8 +3657,8 @@ ${problemsText}
           justify-content: space-between;
           align-items: center;
         ">
-          <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--text-primary);">
-            执行修复命令 (${commands.length} 条)
+          <h3 id="fix-modal-title" style="margin: 0; font-size: 16px; font-weight: 600; color: var(--text-primary);">
+            执行修复命令 (${commands.length} 条) - 已授权
           </h3>
           <button onclick="this.closest('div[style*=fixed]').remove()" style="
             background: none;
@@ -3497,6 +3679,10 @@ ${problemsText}
 
     document.body.appendChild(modal);
     const container = document.getElementById('fix-progress-container');
+    const modalTitle = document.getElementById('fix-modal-title');
+
+    let retryCount = 0;
+    const maxRetries = 2;
 
     for (let i = 0; i < commands.length; i++) {
       const cmd = commands[i];
@@ -3521,52 +3707,97 @@ ${problemsText}
           color: var(--accent-color);
           margin-bottom: 8px;
         ">${this.escapeHtml(cmd.command)}</div>
-        <div id="fix-step-${i}-status" style="font-size: 12px; color: var(--text-secondary);">等待确认...</div>
+        <div id="fix-step-${i}-status" style="font-size: 12px; color: var(--text-secondary);">等待执行...</div>
       `;
       container!.appendChild(stepEl);
-
-      const userConfirmed = await this.showConfirm({
-        title: `确认执行命令 ${i + 1}/${commands.length}`,
-        message: `<div style="font-family: monospace; background: var(--bg-secondary); padding: 8px; border-radius: 4px; margin-top: 8px;">${this.escapeHtml(cmd.command)}</div>`,
-        description: cmd.description || undefined,
-        confirmText: '执行',
-        cancelText: '跳过',
-        dangerous: true
-      });
-
-      if (!userConfirmed) {
-        const statusEl = document.getElementById(`fix-step-${i}-status`);
-        if (statusEl) {
-          statusEl.innerHTML = `<span style="color: #eab308;">已跳过</span>`;
-        }
-        continue;
-      }
 
       const statusEl = document.getElementById(`fix-step-${i}-status`);
       if (statusEl) {
         statusEl.innerHTML = `<span style="color: var(--accent-color);">执行中...</span>`;
       }
 
-      try {
-        const result = await invoke('execute_detection_command', { command: cmd.command });
-        const output = result as { output: string; exit_code: number | null };
+      let commandToRun = cmd.command;
+      let executedSuccessfully = false;
+      let attemptCount = 0;
 
-        if (statusEl) {
-          const success = output.exit_code === 0;
-          statusEl.innerHTML = `
-            <div style="color: ${success ? '#22c55e' : '#ef4444'}; margin-top: 4px;">
-              ${success ? '✓ 执行成功' : '✗ 执行失败 (退出码: ' + output.exit_code + ')'}
-            </div>
-            ${output.output ? `<pre style="margin-top: 4px; font-size: 11px; color: var(--text-secondary); max-height: 100px; overflow: auto;">${this.escapeHtml(output.output)}</pre>` : ''}
-          `;
-        }
-      } catch (error: any) {
-        if (statusEl) {
-          statusEl.innerHTML = `<span style="color: #ef4444;">✗ 执行失败: ${this.escapeHtml(error.message)}</span>`;
+      while (!executedSuccessfully && attemptCount <= maxRetries) {
+        try {
+          const commandWithSudo = commandToRun.includes('sudo') ? commandToRun : `echo "${password}" | sudo -S ${commandToRun}`;
+          const result = await invoke('execute_detection_command', { command: commandWithSudo });
+          const output = result as { output: string; exit_code: number | null };
+
+          if (output.exit_code === 0) {
+            if (statusEl) {
+              statusEl.innerHTML = `
+                <div style="color: #22c55e; margin-top: 4px;">✓ 执行成功</div>
+                ${output.output ? `<pre style="margin-top: 4px; font-size: 11px; color: var(--text-secondary); max-height: 100px; overflow: auto; white-space: pre-wrap;">${this.escapeHtml(output.output)}</pre>` : ''}
+              `;
+            }
+            executedSuccessfully = true;
+          } else {
+            if (attemptCount < maxRetries) {
+              if (statusEl) {
+                statusEl.innerHTML = `
+                  <div style="color: #eab308; margin-top: 4px;">⚠ 尝试 ${attemptCount + 1} 失败，正在获取替代方案...</div>
+                `;
+              }
+
+              const alternativeCmd = await this.getAlternativeCommand(
+                cmd.command,
+                output.output || `Exit code: ${output.exit_code}`,
+                commandToRun
+              );
+
+              if (alternativeCmd) {
+                commandToRun = alternativeCmd;
+                attemptCount++;
+                retryCount++;
+
+                const retryEl = document.createElement('div');
+                retryEl.style.cssText = `
+                  margin-top: 8px;
+                  padding: 8px;
+                  background: rgba(234, 179, 8, 0.1);
+                  border-radius: 4px;
+                  font-size: 11px;
+                `;
+                retryEl.innerHTML = `
+                  <div style="color: #eab308; margin-bottom: 4px;">↻ 尝试替代方案 (${attemptCount}/${maxRetries}):</div>
+                  <div style="font-family: var(--font-mono, monospace); color: var(--text-secondary);">${this.escapeHtml(commandToRun)}</div>
+                `;
+                stepEl.appendChild(retryEl);
+              } else {
+                if (statusEl) {
+                  statusEl.innerHTML = `
+                    <div style="color: #f59e0b; margin-top: 4px;">⚠ 未能找到替代方案，跳过此步骤</div>
+                    <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">错误: ${this.escapeHtml(output.output || `Exit code: ${output.exit_code}`)}</div>
+                  `;
+                }
+                break;
+              }
+            } else {
+              if (statusEl) {
+                statusEl.innerHTML = `
+                  <div style="color: #f59e0b; margin-top: 4px;">⚠ 已尝试所有方案，仍失败</div>
+                  <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">${this.escapeHtml(output.output || `Exit code: ${output.exit_code}`)}</div>
+                `;
+              }
+              break;
+            }
+          }
+        } catch (error: any) {
+          if (statusEl) {
+            statusEl.innerHTML = `<span style="color: #ef4444;">✗ 执行失败: ${this.escapeHtml(error.message)}</span>`;
+          }
+          break;
         }
       }
 
       container!.scrollTop = container!.scrollHeight;
+    }
+
+    if (retryCount > 0) {
+      modalTitle!.textContent = `执行修复命令 - 已完成 (重试 ${retryCount} 次)`;
     }
 
     const finishEl = document.createElement('div');
@@ -3584,30 +3815,168 @@ ${problemsText}
   }
 
   /**
+   * 获取替代命令
+   */
+  private async getAlternativeCommand(
+    originalCommand: string,
+    errorOutput: string,
+    previousAttempt?: string
+  ): Promise<string | null> {
+    try {
+      const systemPrompt = `你是一位资深的 Linux 系统运维专家。当修复命令执行失败时，你需要分析错误原因并提供替代方案。
+
+要求：
+1. 分析原始命令失败的原因
+2. 提供一个或多个替代命令
+3. 替代命令必须用 \`\`\`bash 包裹，只包含一条命令
+4. 如果问题无法用命令解决，说明原因
+
+常见失败原因及处理方式：
+- 文件/目录不存在 → 检查路径或先创建
+- 权限不足 → 使用 sudo 或改变文件权限
+- 服务未安装 → 尝试安装或使用替代工具
+- 命令语法错误 → 修正语法
+- 配置文件格式错误 → 使用正确格式`;
+
+      const userPrompt = `原始修复命令：${originalCommand}
+${previousAttempt ? `上次尝试命令：${previousAttempt}` : ''}
+执行失败输出/错误：
+${errorOutput}
+
+请分析失败原因并提供替代命令（如果可能）。`;
+
+      let alternativeCommand: string | null = null;
+
+      await aiService.chatStream(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        () => {},
+        (finalText) => {
+          const match = finalText.match(/```bash\n?([\s\S]*?)```/);
+          if (match) {
+            alternativeCommand = match[1].trim();
+          }
+        }
+      );
+
+      return alternativeCommand;
+    } catch (error) {
+      console.error('获取替代命令失败:', error);
+      return null;
+    }
+  }
+
+  /**
    * 从文本中提取命令
    */
   private extractCommandsFromText(text: string): Array<{ command: string; description: string }> {
     const commands: Array<{ command: string; description: string }> = [];
+
     const codeBlockRegex = /```(?:bash|sh|shell)?\s*\n([\s\S]*?)```/g;
     let match;
 
     while ((match = codeBlockRegex.exec(text)) !== null) {
-      const command = match[1].trim().replace(/^[\$#>]\s*/gm, '');
-      if (command) {
-        const lines = text.substring(0, match.index).split('\n');
-        let description = '';
-        for (let i = lines.length - 1; i >= 0; i--) {
-          const line = lines[i].trim();
-          if (line && !line.startsWith('#')) {
-            description = line.replace(/^步骤\d+[：:]\s*/, '');
-            break;
-          }
+      const blockContent = match[1];
+      const lines = blockContent.split('\n');
+
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine || trimmedLine.startsWith('#')) continue;
+
+        const cleanedLine = trimmedLine.replace(/^[\$#>]\s*/gm, '');
+        if (this.isValidCommand(cleanedLine)) {
+          const description = this.extractDescriptionFromContext(text, match.index, cleanedLine);
+          commands.push({ command: cleanedLine, description });
         }
-        commands.push({ command, description });
+      }
+    }
+
+    if (commands.length === 0) {
+      const fallbackCommands = this.extractCommandsFallback(text);
+      for (const cmd of fallbackCommands) {
+        commands.push({ command: cmd, description: '' });
       }
     }
 
     return commands;
+  }
+
+  private isValidCommand(line: string): boolean {
+    if (!line || line.length < 2) return false;
+
+    const chineseRegex = /[\u4e00-\u9fa5]/;
+    if (chineseRegex.test(line)) return false;
+
+    if (line.includes('（') || line.includes('）') || line.includes('：')) return false;
+
+    if (line.includes('或者') || line.includes('或者使用') || line.includes('或者使用iptables-persistent')) return false;
+
+    const commandPatterns = [
+      /^(apt-get|yum|dnf|pacman|apk)\s+/,
+      /^(service|systemctl|init)\s+/,
+      /^(iptables|ip6tables|ufw|firewall-cmd|nft)\s+/,
+      /^(systemctl|service)\s+(enable|disable|start|stop|restart|reload|status)/,
+      /^(mkdir|chmod|chown|rm|cp|mv|ln|touch|cat|echo|grep|sed|awk|find|xargs)\s+/,
+      /^(ssh|scp|rsync|sftp)\s+/,
+      /^(wget|curl|git|svn)\s+/,
+      /^(tar|zip|unzip|gzip|bzip2|xz)\s+/,
+      /^(kill|pkill|killall|ps|top)\s+/,
+      /^(useradd|usermod|userdel|passwd|groupadd|chpasswd)\s+/,
+      /^(crontab|sed|cat|tee|dd)\s+/,
+      /^(ls|cd|pwd|whoami|id|uname|hostname)\s*/,
+      /^(echo|export|source|eval)\s+/,
+      /^(tee|dd|blockdev)\s+/,
+      /^(netfilter-persistent|iptables-persistent)\s+/,
+      /^(save|reload|start|stop)\s*/,
+      /^(echo|tee)\s+.*\|/,
+      /^\s*echo\s+["']/,
+      /^\s*apt-get\s+install/,
+      /^\s*yum\s+install/,
+      /^\s*dnf\s+install/,
+      /^\s*systemctl\s+/,
+      /^\s*service\s+/,
+      /^\s*systemctl\s+enable/,
+      /^\s*systemctl\s+start/,
+      /^\s*systemctl\s+restart/,
+      /^\s*systemctl\s+reload/,
+      /^\s*systemctl\s+status/,
+      /^\s*service\s+iptables\s+save/,
+      /^\s*netfilter-persistent\s+save/,
+      /^\s*netfilter-persistent\s+reload/,
+      /^\s*iptables\s+/,
+      /^\s*ip6tables\s+/,
+      /^\s*ufw\s+/,
+      /^\s*firewall-cmd\s+/,
+    ];
+
+    return commandPatterns.some(pattern => pattern.test(line));
+  }
+
+  private extractDescriptionFromContext(text: string, matchIndex: number, command: string): string {
+    const lines = text.substring(0, matchIndex).split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (line && !line.startsWith('#') && line.includes(command.substring(0, 20))) {
+        return line.replace(/^步骤\d+[：:]\s*/, '').replace(/[`#*]/g, '').trim();
+      }
+    }
+    return '';
+  }
+
+  private extractCommandsFallback(text: string): string[] {
+    const lines = text.split('\n');
+    const validCommands: string[] = [];
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (this.isValidCommand(trimmedLine)) {
+        validCommands.push(trimmedLine);
+      }
+    }
+
+    return validCommands;
   }
 
   /**

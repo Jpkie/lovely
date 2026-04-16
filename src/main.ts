@@ -2104,6 +2104,9 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
                 port: connection.port,
                 username: connection.username
               });
+              // 连接成功后自动跳转到 AI 指挥台
+              app.getStateManager().setCurrentPage('ai-command-center');
+              app.render();
             }
 
             // 连接成功后在后台加载系统信息，避免阻塞连接完成。

@@ -258,6 +258,48 @@ class ToolCallRequest(BaseModel):
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
 
+class SkillCall(BaseModel):
+    """Planner 输出的单次 Skill 调用（含参数）"""
+
+    skill: str = Field(..., description="Skill 名称")
+    args: Dict[str, Any] = Field(default_factory=dict, description="从自然语言提取的参数")
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="匹配置信度")
+
+
+class PlannerOutput(BaseModel):
+    """Planner 标准输出格式: 用户任务 -> skill + args -> build_steps -> executor"""
+
+    calls: List[SkillCall] = Field(default_factory=list, description="待调用的 Skill 列表")
+    reasoning: str = Field(default="", description="选择理由 / 推理过程")
+    fallback_skill: Optional[str] = Field(None, description="兜底 skill（当无匹配时使用）")
+
+
+class PlanStatus(str, Enum):
+    """计划状态枚举"""
+
+    PENDING = "pending"
+    PLANNING = "planning"
+    PLANNED = "planned"
+    FAILED = "failed"
+
+
+class SkillMatch(BaseModel):
+    """规则匹配的中间结果"""
+
+    skill_name: str = Field(description="匹配到的 skill 名称")
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="匹配置信度")
+    parameters: Dict[str, Any] = Field(default_factory=dict, description="已提取的参数")
+
+
+class PlannerConfig(BaseModel):
+    """Planner 全局配置"""
+
+    max_skills_per_task: int = Field(default=3, ge=1, le=10, description="单次任务最多调用几个 skill")
+    enable_llm_planner: bool = Field(default=False, description="是否启用 LLM 规划")
+    llm_model: Optional[str] = Field(default=None, description="LLM 模型名称")
+    llm_temperature: float = Field(default=0.3, ge=0.0, le=2.0, description="LLM 温度（低值更稳定）")
+
+
 class ToolRegistry(BaseModel):
     """工具注册表"""
 

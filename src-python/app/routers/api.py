@@ -1498,18 +1498,21 @@ async def agent_get_tools():
 async def agent_get_skills():
     """获取可用 Skills 列表"""
     registry = get_default_skill_registry()
-    skills = registry.list_skills()
+    skills = []
+    for s in registry.iter_skills():
+        default_steps = s.build_steps({}, {})
+        skills.append({
+            "id": s.name,
+            "name": s.name,
+            "description": s.description,
+            "category": s.category,
+            "step_count": len(default_steps),  # 兼容旧版字段
+            "default_step_count": len(default_steps),
+            "parameter_count": len(s.parameters),
+            "dynamic": len(s.parameters) > 0,
+        })
 
     return {
-        "skills": [
-            {
-                "id": s.id,
-                "name": s.name,
-                "description": s.description,
-                "category": s.category,
-                "step_count": len(s.steps),
-            }
-            for s in skills
-        ],
+        "skills": skills,
         "count": len(skills),
     }

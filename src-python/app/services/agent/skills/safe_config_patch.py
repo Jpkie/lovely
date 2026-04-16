@@ -166,6 +166,10 @@ class SafeConfigPatchSkill(BaseSkill):
 {recommendations}
 """
 
+    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
+        """固定步骤模式：直接返回预定义的配置修补流程"""
+        return self.steps
+
 
 def register_safe_config_patch_skill(registry) -> None:
     """注册安全配置修补 skill"""

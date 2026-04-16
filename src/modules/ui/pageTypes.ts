@@ -2,9 +2,7 @@
  * 统一页面类型定义
  * 所有页面类型和 UI 模式类型集中定义，确保类型一致性
  */
-
 export type UIMode = 'classic' | 'ai';
-
 export type AppPage =
   | 'dashboard'
   | 'system-info'
@@ -17,7 +15,6 @@ export type AppPage =
   | 'payloader'
   | 'ai-chat'
   | 'ai-command-center';
-
 export const APP_PAGES: AppPage[] = [
   'dashboard',
   'system-info',
@@ -31,11 +28,8 @@ export const APP_PAGES: AppPage[] = [
   'ai-chat',
   'ai-command-center'
 ];
-
 export const DEFAULT_PAGE: AppPage = 'dashboard';
-
 export const DEFAULT_UI_MODE: UIMode = 'classic';
-
 export const PAGE_TITLES: Record<AppPage, string> = {
   'dashboard': '仪表板',
   'system-info': '系统信息',
@@ -49,7 +43,6 @@ export const PAGE_TITLES: Record<AppPage, string> = {
   'ai-chat': 'AI助手',
   'ai-command-center': 'AI指挥台'
 };
-
 export const PAGE_DESCRIPTIONS: Record<AppPage, string> = {
   'dashboard': '查看服务器实时状态概览',
   'system-info': '查看详细系统配置信息',
@@ -63,3 +56,25 @@ export const PAGE_DESCRIPTIONS: Record<AppPage, string> = {
   'ai-chat': 'AI智能助手辅助分析',
   'ai-command-center': '智能任务编排与执行'
 };
+/**
+ * 统一应用状态类型定义（全局唯一来源）
+ */
+export interface AppState {
+  theme: 'light' | 'dark' | 'sakura';
+  uiMode: UIMode;
+  isConnected: boolean;
+  currentServer?: string;
+  serverInfo?: any;
+  loading: boolean;
+  currentPage: AppPage;
+}
+/**
+ * 服务器信息类型定义（全局唯一来源）
+ */
+export interface ServerInfo {
+  name: string;
+  host: string;
+  port: number;
+  username?: string;
+  detailedInfo?: any;
+}

@@ -4,7 +4,7 @@
  */
 
 import type { StateManager } from '../core/stateManager';
-import type { AppState } from '../core/app';
+import type { AppState } from '../ui/pageTypes';
 import { DashboardRenderer } from './dashboardRenderer';
 import { AICommandCenterRenderer } from '../ai/aiCommandCenterRenderer';
 
@@ -410,6 +410,13 @@ export class ModernUIRenderer {
   }
 
   /**
+   * 判断当前页面是否应隐藏左侧导航栏
+   */
+  public shouldHideSidebar(): boolean {
+    return !this.state.isConnected || this.state.currentPage === 'ai-command-center';
+  }
+
+  /**
    * 渲染设置菜单
    */
   private renderSettingsMenu(): string {
@@ -647,10 +654,10 @@ export class ModernUIRenderer {
 
 
 
-  /**
-   * 渲染工作区内容
-   */
-  private renderWorkspaceContent(): string {
+/**
+ * 渲染工作区内容
+ */
+private renderWorkspaceContent(): string {
     if (this.state.loading) {
       return this.renderLoadingState();
     }
@@ -686,7 +693,7 @@ export class ModernUIRenderer {
       default:
         return this.renderDashboard();
     }
-  }
+}
 
   /**
    * 渲染 AI 命令中心页面
@@ -3046,6 +3053,35 @@ export class ModernUIRenderer {
                       min-width: 40px;
                       text-align: right;
                     ">14px</span>
+                  </div>
+                </div>
+
+                <div class="setting-item" style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  margin-bottom: var(--spacing-md);
+                ">
+                  <div>
+                    <label style="
+                      font-size: 14px;
+                      font-weight: 500;
+                      color: var(--text-primary);
+                      display: block;
+                      margin-bottom: 4px;
+                    ">界面模式</label>
+                    <p style="
+                      font-size: 12px;
+                      color: var(--text-secondary);
+                      margin: 0;
+                    ">
+                      经典模式：传统工具箱式界面，适合熟悉功能入口的用户<br>
+                      AI指挥台模式：AI优先的任务式界面，适合通过自然语言驱动操作
+                    </p>
+                  </div>
+                  <div class="segmented-control ui-mode-switcher" style="width: fit-content;">
+                    <button class="segmented-btn ${this.state.uiMode === 'classic' ? 'active' : ''}" data-mode="classic">经典模式</button>
+                    <button class="segmented-btn ${this.state.uiMode === 'ai' ? 'active' : ''}" data-mode="ai">AI指挥台</button>
                   </div>
                 </div>
               </div>

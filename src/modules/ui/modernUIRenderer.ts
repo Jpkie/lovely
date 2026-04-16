@@ -612,10 +612,10 @@ export class ModernUIRenderer {
 
 
 
-  /**
-   * 渲染工作区内容
-   */
-  private renderWorkspaceContent(): string {
+/**
+ * 渲染工作区内容
+ */
+private renderWorkspaceContent(): string {
     if (this.state.loading) {
       return this.renderLoadingState();
     }
@@ -647,11 +647,13 @@ export class ModernUIRenderer {
         return this.renderPayloaderPage();
       case 'ai-command-center':
         return this.renderAICommandCenterPage();
+      case 'settings':
+        return this.renderSettingsPage();
       case 'dashboard':
       default:
         return this.renderDashboard();
     }
-  }
+}
 
   /**
    * 渲染 AI 命令中心页面

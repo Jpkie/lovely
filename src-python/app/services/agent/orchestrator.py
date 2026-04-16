@@ -30,13 +30,13 @@ from .schemas import (
     AgentFinalResponse,
     Plan,
     PlanStep,
+    PlannerConfig,
+    PlannerOutput,
+    SkillCall,
 )
 from .skills import get_default_skill_registry, SkillRegistry
 from .planner import (
     BasePlanner,
-    PlannerConfig,
-    PlannerOutput,
-    SkillCall,
     create_planner,
     RuleBasedPlanner,
 )
@@ -392,7 +392,7 @@ class AgentOrchestrator:
 
         # ── 4f: structured_output 详细化 ──
         report.structured_output = self._build_structured_output(
-            request, execution_result, replan_count, skill_results,
+            request, execution_result, replan_count, skill_results, report.environment
         )
 
         # ── 4g: 最终状态判定 ──
@@ -691,6 +691,7 @@ class AgentOrchestrator:
         execution_result: ExecutionResult,
         replan_count: int,
         skill_results: List[StructuredResult],
+        environment: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """构建详细的 structured_output 字典"""
         failed_count = sum(
@@ -711,7 +712,7 @@ class AgentOrchestrator:
                 "replanned_steps": replan_count,
                 "total_duration_ms": execution_result.total_duration_ms,
             },
-            "environment": getattr(self, '_last_env_info', None),  # 由 _assemble_report 填充
+            "environment": environment,
             "skill_results": [
                 {
                     "skill_name": sr.skill_name,

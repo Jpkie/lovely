@@ -9,41 +9,30 @@
 """
 
 from abc import ABC, abstractmethod
-from enum import Enum
 import json
 import re
 import uuid
 from typing import Any, Dict, List, Optional, Pattern
-from pydantic import BaseModel, Field
 
-from .schemas import AgentRequest, Message, ModelRole, Plan, PlanStep, PlannerOutput, SkillCall
-
-
-# ────────────────── 数据模型 ──────────────────
-
-
-class PlanStatus(str, Enum):
-    PENDING = "pending"
-    PLANNING = "planning"
-    PLANNED = "planned"
-    FAILED = "failed"
-
-
-class SkillMatch(BaseModel):
-    """规则匹配的中间结果"""
-
-    skill_name: str = Field(description="匹配到的 skill 名称")
-    confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="匹配置信度")
-    parameters: Dict[str, Any] = Field(default_factory=dict, description="已提取的参数")
+from .schemas import (
+    AgentRequest,
+    Message,
+    ModelRole,
+    Plan,
+    PlanStep,
+    PlannerConfig,
+    PlannerOutput,
+    SkillCall,
+    SkillMatch,
+    PlanStatus,
+)
 
 
-class PlannerConfig(BaseModel):
-    """Planner 全局配置"""
+# ────────────────── 过渡导出 ──────────────────
+# 以下模型已迁移到 schemas.py，此处保留 re-export 以兼容旧导入路径
+# TODO: 迁移期结束后删除此块
 
-    max_skills_per_task: int = Field(default=3, ge=1, le=10, description="单次任务最多调用几个 skill")
-    enable_llm_planner: bool = Field(default=False, description="是否启用 LLM 规划")
-    llm_model: Optional[str] = Field(default=None, description="LLM 模型名称")
-    llm_temperature: float = Field(default=0.3, ge=0.0, le=2.0, description="LLM 温度（低值更稳定）")
+__all__ = ["PlanStatus", "SkillMatch", "PlannerConfig"]
 
 
 # ────────────────── 参数提取引擎 ──────────────────
@@ -241,80 +230,128 @@ class ParamExtractor:
 
     @classmethod
     def _for_log_investigation(cls, task: str, base: Dict[str, Any]) -> Dict[str, Any]:
-        """日志调查参数提取"""
+        """日志调查参数提取 — 参数 key 对齐 LogInvestigationSkill.parameters
+
+        Skill 参数: source, log_path, keywords, page_size
+        """
         extra: Dict[str, Any] = {}
 
-        # 如果没有显式给路径，按日志类型推断默认路径
-        if "log_path" not in base:
+        # ── source: 日志来源 ──
+        # journal 识别 → source="journal"
+        if cls._RE_LOG_TYPE_JOURNAL.search(task) or "journal" in task.lower():
+            extra["source"] = "journal"
+        elif cls._RE_LOG_TYPE_BTMP.search(task):
+            extra["source"] = "custom"
+        elif cls._RE_LOG_TYPE_KERNEL.search(task):
+            extra["source"] = "custom"
+        elif cls._RE_LOG_TYPE_MESSAGE.search(task):
+            extra["source"] = "custom"
+
+        # ── log_path: 日志文件路径 ──
+        # 如果用户给了显式路径（通用路径提取），直接用
+        if "log_path" in base:
+            extra["log_path"] = base["log_path"]
+            # 有显式路径 → source=custom
+            extra.setdefault("source", "custom")
+        else:
+            # 按日志类型推断默认路径
             if cls._RE_LOG_TYPE_AUTH.search(task):
                 extra["log_path"] = "/var/log/auth.log"
+                extra.setdefault("source", "system")
             elif cls._RE_LOG_TYPE_SYSLOG.search(task):
                 extra["log_path"] = "/var/log/syslog"
-            elif cls._RE_LOG_TYPE_JOURNAL.search(task):
-                extra["log_path"] = "journal"  # 特殊标记，build_steps 会处理
+                extra.setdefault("source", "system")
             elif cls._RE_LOG_TYPE_BTMP.search(task):
                 extra["log_path"] = "/var/log/btmp"
             elif cls._RE_LOG_TYPE_KERNEL.search(task):
-                extra["log_path"] = "kernel"  # dmesg
+                extra["log_path"] = "kernel"  # dmesg，build_steps 特殊处理
             elif cls._RE_LOG_TYPE_MESSAGE.search(task):
                 extra["log_path"] = "/var/log/messages"
 
-        # 行数上限
+        # ── page_size: 单页读取行数上限 ──
+        # planner 之前错误地用 "lines"，现对齐为 "page_size"
         count = base.get("_count")
         if count is not None:
-            extra["lines"] = count
-
-        # journalctl 特殊处理
-        if cls._RE_LOG_TYPE_JOURNAL.search(task) or "journal" in task.lower():
-            extra["use_journal"] = True
+            extra["page_size"] = min(count, 200)  # 上限保护
 
         return extra
 
     @classmethod
     def _for_process_hunt(cls, task: str, base: Dict[str, Any]) -> Dict[str, Any]:
-        """进程狩猎参数提取"""
+        """进程狩猎参数提取 — 参数 key 对齐 ProcessHuntSkill.parameters
+
+        Skill 参数: top, sort_by, focus, process_name, include_memory
+        """
         extra: Dict[str, Any] = {}
 
-        # 目标进程名
+        # ── process_name: 目标进程名 ──
         pname = cls._extract_process_name(task)
         if pname:
             extra["process_name"] = pname
 
-        # 返回数量
+        # ── focus: 调查焦点 ──
+        if "可疑" in task or "异常" in task or "挖矿" in task or "木马" in task:
+            extra["focus"] = "suspicious"
+        elif "高资源" in task or "高占用" in task or "资源占用" in task:
+            extra["focus"] = "high_resource"
+
+        # ── top: 返回前 N 个进程 ──
+        # planner 之前错误地用 "top_n"，现对齐为 "top"
         count = base.get("_count")
         if count is not None:
-            extra["top_n"] = min(count, 200)  # 上限保护
+            extra["top"] = min(count, 200)  # 上限保护
 
-        # 排序
+        # ── sort_by: 排序字段 ──
         sort = cls._detect_sort_by(task)
         if sort:
             extra["sort_by"] = sort
         elif "高资源" in task or "高占用" in task:
             extra["sort_by"] = "memory"
 
+        # ── include_memory ──
+        # 默认包含，除非明确说"不查内存"
+        if "不查内存" in task or "跳过内存" in task or "不含内存" in task:
+            extra["include_memory"] = False
+
         return extra
 
     @classmethod
     def _for_ssh_audit(cls, task: str, base: Dict[str, Any]) -> Dict[str, Any]:
-        """SSH 审计参数提取"""
+        """SSH 审计参数提取 — 参数 key 对齐 SSHAuditSkill.parameters
+
+        Skill 参数: check_config, check_users, check_permissions, check_sudo, config_path
+        """
         extra: Dict[str, Any] = {}
 
-        # 自定义 sshd_config 路径
+        # ── config_path: SSH 配置文件路径 ──
+        # 对齐 skill 的 config_path 参数
         m = cls._RE_SSH_CONFIG_PATH.search(task)
         if m:
-            extra["ssh_config_path"] = m.group(1).strip()
+            extra["config_path"] = m.group(1).strip()
 
-        # 开关选项检测
+        # ── 开关选项检测 ──
+        # 对齐: check_config (旧名 check_config_file)、check_users、check_permissions、check_sudo
+
+        if re.search(r'不?[检审]查?\s*配置', task, re.I):
+            match_obj = re.search(r'不?[检审]查?\s*配置', task, re.I)
+            if match_obj:
+                # 对齐: check_config（不是 check_config_file）
+                extra["check_config"] = not match_obj.group(0).startswith("不")
+
         if re.search(r'不?[检审]查?\s*用户', task, re.I):
-            extra["check_users"] = not bool(re.search(r'^不', re.search(r'不?[检审]查?\s*用户', task, re.I).group(0)))
+            match_obj = re.search(r'不?[检审]查?\s*用户', task, re.I)
+            if match_obj:
+                extra["check_users"] = not match_obj.group(0).startswith("不")
+
         if re.search(r'不?[检审]查?\s*(文件|权限)', task, re.I):
             match_obj = re.search(r'不?[检审]查?\s*(文件|权限)', task, re.I)
             if match_obj:
                 extra["check_permissions"] = not match_obj.group(0).startswith("不")
-        if re.search(r'不?[检审]查?\s*配置', task, re.I):
-            match_obj = re.search(r'不?[检审]查?\s*配置', task, re.I)
+
+        if re.search(r'不?[检审]查?\s*sudo', task, re.I):
+            match_obj = re.search(r'不?[检审]查?\s*sudo', task, re.I)
             if match_obj:
-                extra["check_config_file"] = not match_obj.group(0).startswith("不")
+                extra["check_sudo"] = not match_obj.group(0).startswith("不")
 
         return extra
 

@@ -87,7 +87,7 @@ class LogInvestigationSkill(BaseSkill):
                 id="li_2", name=f"读取自定义日志 ({log_path})",
                 description=f"读取指定日志文件: {log_path}",
                 tool_name="read_system_log",
-                parameters={"log_path": log_path, "lines": page_size},
+                parameters={"log_path": log_path, "page_size": page_size},
             ))
         else:
             # 系统默认读取认证和系统日志
@@ -95,13 +95,13 @@ class LogInvestigationSkill(BaseSkill):
                 id="li_2", name="读取认证日志",
                 description="读取系统认证日志 /var/log/auth.log",
                 tool_name="read_system_log",
-                parameters={"log_path": "/var/log/auth.log", "lines": page_size},
+                parameters={"log_path": "/var/log/auth.log", "page_size": page_size},
             ))
             dynamic_steps.append(SkillStep(
                 id="li_3", name="读取系统日志",
                 description="读取系统主日志 /var/log/syslog",
                 tool_name="read_system_log",
-                parameters={"log_path": "/var/log/syslog", "lines": page_size},
+                parameters={"log_path": "/var/log/syslog", "page_size": page_size},
             ))
 
         # 如果指定了关键词搜索
@@ -194,6 +194,13 @@ class ProcessHuntSkill(BaseSkill):
                 default="all",
             ),
             SkillParameter(
+                name="process_name",
+                type="string",
+                description="目标进程名，用于定向查找指定进程",
+                required=False,
+                default="",
+            ),
+            SkillParameter(
                 name="include_memory",
                 type="boolean",
                 description="是否包含系统内存信息检查",
@@ -216,25 +223,31 @@ class ProcessHuntSkill(BaseSkill):
         top = args.get("top", 50)
         sort_by = args.get("sort_by", "cpu")
         focus = args.get("focus", "all")
+        process_name = args.get("process_name", "")
         include_memory = args.get("include_memory", True)
 
         dynamic_steps = []
 
         # 基础进程检测
         detect_params = {"focus": focus}
+        if process_name:
+            detect_params["process_name"] = process_name
         dynamic_steps.append(SkillStep(
             id="ph_1", name="进程分析",
-            description=f"进程分析（焦点: {focus}）",
+            description=f"进程分析（焦点: {focus}）" + (f"，目标进程: {process_name}" if process_name else ""),
             tool_name="detect_process",
             parameters=detect_params,
         ))
 
         # 进程列表 + 排序
+        list_params = {"top": top, "sort_by": sort_by}
+        if process_name:
+            list_params["process_name"] = process_name
         dynamic_steps.append(SkillStep(
             id="ph_2", name="获取进程列表",
-            description=f"获取前 {top} 个进程（按 {sort_by} 排序）",
+            description=f"获取前 {top} 个进程（按 {sort_by} 排序）" + (f"，筛选: {process_name}" if process_name else ""),
             tool_name="process_list",
-            parameters={"top": top, "sort_by": sort_by},
+            parameters=list_params,
         ))
 
         # 内存信息（可选）
@@ -318,6 +331,13 @@ class SSHAuditSkill(BaseSkill):
                 required=False,
                 default=True,
             ),
+            SkillParameter(
+                name="config_path",
+                type="string",
+                description="SSH 配置文件路径（默认 /etc/ssh/sshd_config）",
+                required=False,
+                default="/etc/ssh/sshd_config",
+            ),
         ]
 
     @property
@@ -336,6 +356,7 @@ class SSHAuditSkill(BaseSkill):
         check_users = args.get("check_users", True)
         check_permissions = args.get("check_permissions", True)
         check_sudo = args.get("check_sudo", True)
+        config_path = args.get("config_path", "/etc/ssh/sshd_config")
 
         dynamic_steps = []
         step_idx = 1
@@ -343,9 +364,9 @@ class SSHAuditSkill(BaseSkill):
         if check_config:
             dynamic_steps.append(SkillStep(
                 id=f"ssh_{step_idx}", name="SSH 配置审计",
-                description="审计 SSH 服务配置文件",
+                description=f"审计 SSH 服务配置文件: {config_path}",
                 tool_name="detect_ssh_audit",
-                parameters={"config_path": "/etc/ssh/sshd_config"},
+                parameters={"config_path": config_path},
             ))
             step_idx += 1
 
@@ -428,6 +449,54 @@ class HostTriageSkill(BaseSkill):
     def category(self) -> str:
         return "triage"
 
+    # ── 参数定义 ──
+    @property
+    def parameters(self) -> List[SkillParameter]:
+        return [
+            SkillParameter(
+                name="skip_port_scan",
+                type="boolean",
+                description="是否跳过端口扫描步骤",
+                required=False,
+                default=False,
+            ),
+            SkillParameter(
+                name="skip_user_audit",
+                type="boolean",
+                description="是否跳过用户审计步骤",
+                required=False,
+                default=False,
+            ),
+            SkillParameter(
+                name="skip_process_analysis",
+                type="boolean",
+                description="是否跳过程序分析步骤",
+                required=False,
+                default=False,
+            ),
+            SkillParameter(
+                name="skip_firewall_check",
+                type="boolean",
+                description="是否跳过防火墙检查步骤",
+                required=False,
+                default=False,
+            ),
+            SkillParameter(
+                name="skip_system_info",
+                type="boolean",
+                description="是否跳过系统信息获取步骤",
+                required=False,
+                default=False,
+            ),
+            SkillParameter(
+                name="port_range",
+                type="string",
+                description="端口扫描范围，例如 1-1000、常用端口、全端口",
+                required=False,
+                default="常用端口",
+            ),
+        ]
+
     @property
     def steps(self) -> List[SkillStep]:
         return [
@@ -468,6 +537,69 @@ class HostTriageSkill(BaseSkill):
             ),
         ]
 
+    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
+        """根据参数动态生成主机评估步骤"""
+        skip_port_scan = args.get("skip_port_scan", False)
+        skip_user_audit = args.get("skip_user_audit", False)
+        skip_process_analysis = args.get("skip_process_analysis", False)
+        skip_firewall_check = args.get("skip_firewall_check", False)
+        skip_system_info = args.get("skip_system_info", False)
+        port_range = args.get("port_range", "常用端口")
+
+        dynamic_steps = []
+        step_idx = 1
+
+        if not skip_port_scan:
+            dynamic_steps.append(SkillStep(
+                id=f"ht_{step_idx}",
+                name="端口扫描",
+                description=f"扫描主机开放端口（范围：{port_range}）",
+                tool_name="detect_port_scan",
+                parameters={"port_range": port_range},
+            ))
+            step_idx += 1
+
+        if not skip_user_audit:
+            dynamic_steps.append(SkillStep(
+                id=f"ht_{step_idx}",
+                name="用户审计",
+                description="审计系统用户",
+                tool_name="detect_user_audit",
+                parameters={},
+            ))
+            step_idx += 1
+
+        if not skip_process_analysis:
+            dynamic_steps.append(SkillStep(
+                id=f"ht_{step_idx}",
+                name="进程分析",
+                description="分析运行进程",
+                tool_name="detect_process",
+                parameters={},
+            ))
+            step_idx += 1
+
+        if not skip_firewall_check:
+            dynamic_steps.append(SkillStep(
+                id=f"ht_{step_idx}",
+                name="防火墙检查",
+                description="检查防火墙状态",
+                tool_name="detect_firewall",
+                parameters={},
+            ))
+            step_idx += 1
+
+        if not skip_system_info:
+            dynamic_steps.append(SkillStep(
+                id=f"ht_{step_idx}",
+                name="系统信息",
+                description="获取系统基本信息",
+                tool_name="uname",
+                parameters={"all": True},
+            ))
+
+        return dynamic_steps
+
     @property
     def required_context_keys(self) -> List[str]:
         return ["ssh_manager"]
@@ -495,10 +627,6 @@ class HostTriageSkill(BaseSkill):
 {risk_level}: {summary}
 """
 
-    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
-        """固定步骤模式：直接返回预定义的 steps"""
-        return self.steps
-
 
 class PortHuntSkill(BaseSkill):
     """端口狩猎 skill - 扫描和分析开放端口"""
@@ -514,6 +642,40 @@ class PortHuntSkill(BaseSkill):
     @property
     def category(self) -> str:
         return "investigation"
+
+    # ── 参数定义 ──
+    @property
+    def parameters(self) -> List[SkillParameter]:
+        return [
+            SkillParameter(
+                name="port_range",
+                type="string",
+                description="端口扫描范围，例如 1-1000、常用端口、全端口",
+                required=False,
+                default="常用端口",
+            ),
+            SkillParameter(
+                name="include_network",
+                type="boolean",
+                description="是否包含网络连接检查步骤",
+                required=False,
+                default=True,
+            ),
+            SkillParameter(
+                name="include_firewall",
+                type="boolean",
+                description="是否包含防火墙检查步骤",
+                required=False,
+                default=True,
+            ),
+            SkillParameter(
+                name="fast_scan",
+                type="boolean",
+                description="快速扫描模式（只扫描TOP 100常用端口）",
+                required=False,
+                default=False,
+            ),
+        ]
 
     @property
     def steps(self) -> List[SkillStep]:
@@ -541,6 +703,50 @@ class PortHuntSkill(BaseSkill):
             ),
         ]
 
+    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
+        """根据参数动态生成端口调查步骤"""
+        port_range = args.get("port_range", "常用端口")
+        include_network = args.get("include_network", True)
+        include_firewall = args.get("include_firewall", True)
+        fast_scan = args.get("fast_scan", False)
+
+        # 快速扫描模式覆盖端口范围
+        if fast_scan:
+            port_range = "TOP 100常用端口"
+
+        dynamic_steps = []
+        step_idx = 1
+
+        dynamic_steps.append(SkillStep(
+            id=f"poh_{step_idx}",
+            name="端口扫描",
+            description=f"扫描开放端口（范围：{port_range}）",
+            tool_name="detect_port_scan",
+            parameters={"port_range": port_range, "fast_scan": fast_scan},
+        ))
+        step_idx += 1
+
+        if include_network:
+            dynamic_steps.append(SkillStep(
+                id=f"poh_{step_idx}",
+                name="网络连接",
+                description="查看网络连接",
+                tool_name="network_info",
+                parameters={},
+            ))
+            step_idx += 1
+
+        if include_firewall:
+            dynamic_steps.append(SkillStep(
+                id=f"poh_{step_idx}",
+                name="防火墙检查",
+                description="检查防火墙规则",
+                tool_name="detect_firewall",
+                parameters={},
+            ))
+
+        return dynamic_steps
+
     @property
     def required_context_keys(self) -> List[str]:
         return ["ssh_manager"]
@@ -565,10 +771,6 @@ class PortHuntSkill(BaseSkill):
 {recommendations}
 """
 
-    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
-        """固定步骤模式：直接返回预定义的 steps"""
-        return self.steps
-
 
 class FixAdvisorSkill(BaseSkill):
     """修复建议 skill - 基于检测结果提供修复建议"""
@@ -584,6 +786,54 @@ class FixAdvisorSkill(BaseSkill):
     @property
     def category(self) -> str:
         return "remediation"
+
+    # ── 参数定义 ──
+    @property
+    def parameters(self) -> List[SkillParameter]:
+        return [
+            SkillParameter(
+                name="include_urgent_fixes",
+                type="boolean",
+                description="是否包含紧急修复建议（高风险问题）",
+                required=False,
+                default=True,
+            ),
+            SkillParameter(
+                name="include_standard_fixes",
+                type="boolean",
+                description="是否包含标准修复建议（中风险问题）",
+                required=False,
+                default=True,
+            ),
+            SkillParameter(
+                name="include_best_practices",
+                type="boolean",
+                description="是否包含最佳实践建议",
+                required=False,
+                default=True,
+            ),
+            SkillParameter(
+                name="include_verification_steps",
+                type="boolean",
+                description="是否包含修复后的验证步骤",
+                required=False,
+                default=True,
+            ),
+            SkillParameter(
+                name="include_references",
+                type="boolean",
+                description="是否包含参考链接",
+                required=False,
+                default=True,
+            ),
+            SkillParameter(
+                name="suggest_auto_remediation",
+                type="boolean",
+                description="是否建议可自动修复的方案",
+                required=False,
+                default=True,
+            ),
+        ]
 
     @property
     def steps(self) -> List[SkillStep]:
@@ -603,6 +853,29 @@ class FixAdvisorSkill(BaseSkill):
                 parameters={},
             ),
         ]
+
+    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
+        """根据参数动态生成修复建议步骤"""
+        # 基础信息收集步骤始终执行
+        dynamic_steps = [
+            SkillStep(
+                id="fa_1",
+                name="获取系统信息",
+                description="收集系统信息",
+                tool_name="hostname",
+                parameters={},
+            ),
+            SkillStep(
+                id="fa_2",
+                name="获取运行时间",
+                description="获取系统运行时间",
+                tool_name="uptime",
+                parameters={},
+            ),
+        ]
+
+        # 后续步骤生成逻辑由检测器根据参数决定输出内容，这里步骤固定但输出会根据参数调整
+        return dynamic_steps
 
     @property
     def required_context_keys(self) -> List[str]:
@@ -639,10 +912,6 @@ Hostname: {hostname}
 ## 参考链接
 {references}
 """
-
-    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
-        """固定步骤模式：直接返回预定义的 steps"""
-        return self.steps
 
 
 def register_builtin_skills(registry) -> None:

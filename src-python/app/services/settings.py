@@ -111,7 +111,7 @@ class AppSettings(BaseModel):
     ui: UISettings = Field(default_factory=UISettings)
     ssh: SSHSettings = Field(default_factory=SSHSettings)
     ai: Optional[Dict[str, Any]] = None
-    agent: Optional[AgentSettings] = None
+    agent: Optional[AgentSettings] = Field(default_factory=AgentSettings)
 
 
 # ==================== 设置管理 ====================

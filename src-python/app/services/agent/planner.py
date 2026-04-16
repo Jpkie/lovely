@@ -135,14 +135,32 @@ class RuleBasedPlanner(BasePlanner):
         available_skills: List[Any],
         context: Dict[str, Any],
     ) -> Plan:
-        skill_matches = self._match_skill_by_keywords(request.task)
-
-        if not skill_matches and available_skills:
-            skill_matches = [
-                SkillMatch(skill_name=available_skills[0].name, confidence=0.5)
-            ]
-
         skill_map = {s.name: s for s in available_skills}
+
+        if request.skills:
+            explicit_skills = []
+            for skill_name in request.skills:
+                skill = skill_map.get(skill_name)
+                if skill:
+                    explicit_skills.append(
+                        SkillMatch(skill_name=skill.name, confidence=1.0)
+                    )
+
+            if explicit_skills:
+                skill_matches = explicit_skills
+            elif available_skills:
+                skill_matches = [
+                    SkillMatch(skill_name=available_skills[0].name, confidence=0.5)
+                ]
+            else:
+                skill_matches = self._match_skill_by_keywords(request.task)
+        else:
+            skill_matches = self._match_skill_by_keywords(request.task)
+
+            if not skill_matches and available_skills:
+                skill_matches = [
+                    SkillMatch(skill_name=available_skills[0].name, confidence=0.5)
+                ]
 
         steps = []
         step_number = 1

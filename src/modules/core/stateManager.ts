@@ -5,6 +5,9 @@
 
 import type { AppState } from './app';
 import type { ModernUIRenderer } from '../ui/modernUIRenderer';
+import type { AppPage, UIMode } from '../ui/pageTypes';
+import { DEFAULT_PAGE, DEFAULT_UI_MODE } from '../ui/pageTypes';
+import { getDefaultPageForMode } from '../ui/uiModeManager';
 
 export class StateManager {
   private state: AppState;
@@ -14,10 +17,12 @@ export class StateManager {
   constructor() {
     this.state = {
       theme: 'light',
+      uiMode: DEFAULT_UI_MODE,
       isConnected: false,
       currentServer: undefined,
+      serverInfo: undefined,
       loading: false,
-      currentPage: 'dashboard',
+      currentPage: DEFAULT_PAGE,
     };
   }
 
@@ -103,8 +108,36 @@ export class StateManager {
   /**
    * 设置当前页面
    */
-  setCurrentPage(page: 'dashboard' | 'system-info' | 'ssh-terminal' | 'remote-operations' | 'emergency-commands' | 'log-analysis' | 'settings' | 'quick-detection' | 'database' | 'payloader' | 'ai-chat'): void {
+  setCurrentPage(page: AppPage): void {
     this.setState({ currentPage: page });
+  }
+
+  /**
+   * 设置 UI 模式
+   * 切换模式时自动跳转到该模式的默认页面
+   */
+  setUIMode(mode: UIMode): void {
+    const newPage = getDefaultPageForMode(mode);
+    this.setState({
+      uiMode: mode,
+      currentPage: newPage
+    });
+  }
+
+  /**
+   * 获取当前 UI 模式
+   */
+  getUIMode(): UIMode {
+    return this.state.uiMode;
+  }
+
+  /**
+   * 切换 UI 模式
+   */
+  toggleUIMode(): UIMode {
+    const newMode: UIMode = this.state.uiMode === 'classic' ? 'ai' : 'classic';
+    this.setUIMode(newMode);
+    return newMode;
   }
 
   /**
@@ -200,10 +233,12 @@ export class StateManager {
   reset(): void {
     this.state = {
       theme: 'light',
+      uiMode: DEFAULT_UI_MODE,
       isConnected: false,
       currentServer: undefined,
+      serverInfo: undefined,
       loading: false,
-      currentPage: 'dashboard',
+      currentPage: DEFAULT_PAGE,
     };
     
     // 清除本地存储

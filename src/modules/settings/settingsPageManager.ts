@@ -8,7 +8,6 @@ import { aiService, AIProvider } from '../ai/aiService';
 
 export class SettingsPageManager {
   private settingsManager: SettingsManager;
-  private systemFonts: string[] = [];
 
   // 预设提供商（不可删除）
   private readonly presetProviders = ['openai', 'deepseek', 'claude', 'custom'];
@@ -30,15 +29,6 @@ export class SettingsPageManager {
         this.switchTab(tabName);
       };
 
-      // 先使用默认字体填充，避免接口慢导致一直“正在加载字体...”
-      this.systemFonts = this.getDefaultFonts();
-      this.updateFontSelector();
-
-      // 异步加载系统字体，不阻塞设置页交互
-      this.loadSystemFonts().catch((error) => {
-        console.error('❌ 异步加载系统字体失败:', error);
-      });
-
       // 加载设置（若失败也不阻塞基础交互）
       await this.settingsManager.loadSettings();
 
@@ -49,77 +39,6 @@ export class SettingsPageManager {
     } catch (error) {
       console.error('❌ 设置页面初始化失败:', error);
     }
-  }
-
-  /**
-   * 加载系统字体
-   */
-  private async loadSystemFonts(): Promise<void> {
-    try {
-      console.log('🔤 正在加载系统字体...');
-
-      const { invoke } = await import('../../shims/@tauri-apps/api/core');
-      this.systemFonts = await invoke('get_system_fonts') as string[];
-
-      console.log('📋 获取到的字体列表:', this.systemFonts.slice(0, 10)); // 显示前10个字体
-      console.log(`📊 总共获取到 ${this.systemFonts.length} 个字体`);
-
-      // 更新字体选择器
-      this.updateFontSelector();
-
-      console.log(`✅ 已加载 ${this.systemFonts.length} 个系统字体`);
-    } catch (error) {
-      console.error('❌ 加载系统字体失败:', error);
-      // 使用默认字体列表作为后备
-      this.systemFonts = this.getDefaultFonts();
-      console.log('📋 使用默认字体列表:', this.systemFonts.slice(0, 10));
-      this.updateFontSelector();
-    }
-  }
-
-  /**
-   * 更新字体选择器
-   */
-  private updateFontSelector(): void {
-    const globalFontSelect = document.getElementById('global-font') as HTMLSelectElement;
-    if (!globalFontSelect) return;
-
-    // 清空现有选项
-    globalFontSelect.innerHTML = '';
-
-    // 添加字体选项
-    this.systemFonts.forEach(font => {
-      const option = document.createElement('option');
-      option.value = font === '系统默认' ? 'system' : font;
-      option.textContent = font;
-
-      // 为字体选项添加预览样式
-      if (font !== '系统默认') {
-        option.style.fontFamily = font;
-      }
-
-      globalFontSelect.appendChild(option);
-    });
-  }
-
-  /**
-   * 获取默认字体列表（后备方案）
-   */
-  private getDefaultFonts(): string[] {
-    return [
-      '系统默认',
-      'Microsoft YaHei',
-      '微软雅黑',
-      'SimSun',
-      '宋体',
-      'SimHei',
-      '黑体',
-      'Arial',
-      'Times New Roman',
-      'Calibri',
-      'Consolas',
-      'JetBrains Mono'
-    ];
   }
 
   /**
@@ -150,25 +69,6 @@ export class SettingsPageManager {
     if (resetButton) {
       resetButton.addEventListener('click', () => {
         this.resetSettings();
-      });
-    }
-
-    // 全局字体变化监听
-    const globalFontSelect = document.getElementById('global-font') as HTMLSelectElement;
-    if (globalFontSelect) {
-      globalFontSelect.addEventListener('change', () => {
-        this.previewGlobalFont();
-      });
-    }
-
-    // 全局字体大小滑块监听
-    const globalFontSizeSlider = document.getElementById('global-font-size') as HTMLInputElement;
-    const fontSizeValue = document.getElementById('font-size-value');
-    if (globalFontSizeSlider && fontSizeValue) {
-      globalFontSizeSlider.addEventListener('input', () => {
-        const size = globalFontSizeSlider.value;
-        fontSizeValue.textContent = `${size}px`;
-        this.previewGlobalFontSize(parseInt(size));
       });
     }
 
@@ -288,21 +188,6 @@ export class SettingsPageManager {
   private loadSettingsToForm(): void {
     const settings = this.settingsManager.getSettings();
 
-    // 基础设置
-    const globalFontSelect = document.getElementById('global-font') as HTMLSelectElement;
-    if (globalFontSelect) {
-      globalFontSelect.value = settings.ui.globalFont;
-    }
-
-    // 字体大小设置
-    const globalFontSizeSlider = document.getElementById('global-font-size') as HTMLInputElement;
-    const fontSizeValue = document.getElementById('font-size-value');
-    if (globalFontSizeSlider && fontSizeValue) {
-      const fontSize = settings.ui.globalFontSize || 14;
-      globalFontSizeSlider.value = fontSize.toString();
-      fontSizeValue.textContent = `${fontSize}px`;
-    }
-
     // AI设置
     // 确保 ai 和 providers 存在
     if (!settings.ai) {
@@ -324,33 +209,6 @@ export class SettingsPageManager {
 
     // 更新删除按钮可见性
     this.updateDeleteButtonVisibility();
-  }
-
-  /**
-   * 预览全局字体
-   */
-  private previewGlobalFont(): void {
-    const globalFontSelect = document.getElementById('global-font') as HTMLSelectElement;
-    if (globalFontSelect) {
-      const selectedFont = globalFontSelect.value;
-      if (selectedFont && selectedFont !== 'system') {
-        // 如果字体名称不包含引号，自动添加
-        let fontFamily = selectedFont;
-        if (!fontFamily.includes("'") && !fontFamily.includes('"')) {
-          fontFamily = `'${fontFamily}', sans-serif`;
-        }
-        document.documentElement.style.setProperty('--font-family', fontFamily);
-      } else {
-        document.documentElement.style.removeProperty('--font-family');
-      }
-    }
-  }
-
-  /**
-   * 预览全局字体大小
-   */
-  private previewGlobalFontSize(size: number): void {
-    document.documentElement.style.setProperty('--font-size', `${size}px`);
   }
 
   /**
@@ -417,8 +275,6 @@ export class SettingsPageManager {
    * 收集表单数据
    */
   private collectFormData(): any {
-    const globalFontSelect = document.getElementById('global-font') as HTMLSelectElement;
-    const globalFontSizeSlider = document.getElementById('global-font-size') as HTMLInputElement;
     const aiProviderSelect = document.getElementById('ai-provider') as HTMLSelectElement;
     const apiKeyInput = document.getElementById('ai-api-key') as HTMLInputElement;
     const modelInput = document.getElementById('ai-model') as HTMLInputElement;
@@ -453,10 +309,6 @@ export class SettingsPageManager {
     }
 
     return {
-      ui: {
-        globalFont: globalFontSelect?.value || 'system',
-        globalFontSize: parseInt(globalFontSizeSlider?.value || '14')
-      },
       ai: {
         currentProvider: currentProvider,
         providers: updatedProviders
@@ -474,13 +326,13 @@ export class SettingsPageManager {
 
         // 重置到默认值
         this.settingsManager.resetToDefaults();
-        
+
         // 保存设置
         await this.settingsManager.saveSettings();
-        
+
         // 重新加载表单
         this.loadSettingsToForm();
-        
+
         // 显示成功消息
         this.showMessage('设置已重置为默认值', 'success');
 
@@ -722,21 +574,6 @@ export class SettingsPageManager {
       messageDiv.remove();
       style.remove();
     }, 3000);
-  }
-
-  /**
-   * 获取字体选项
-   */
-  getFontOptions(): Array<{ value: string; label: string }> {
-    return [
-      { value: 'system', label: '系统默认' },
-      { value: "'Microsoft YaHei', sans-serif", label: '微软雅黑' },
-      { value: "'PingFang SC', sans-serif", label: '苹方' },
-      { value: "'Noto Sans CJK SC', sans-serif", label: '思源黑体' },
-      { value: "'Source Han Sans SC', sans-serif", label: 'Source Han Sans' },
-      { value: "'Consolas', monospace", label: 'Consolas (等宽)' },
-      { value: "'JetBrains Mono', monospace", label: 'JetBrains Mono (等宽)' }
-    ];
   }
 
   /**

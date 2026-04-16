@@ -1,6 +1,6 @@
 /**
  * AI 命令中心渲染器
- * 负责渲染 AI 命令中心的 UI 组件
+ * AI 模式首页工作台 - 真正的 AI 指挥中心
  */
 
 import { agentService } from './agentService';
@@ -13,7 +13,16 @@ import {
   CloseOne,
   Refresh,
   Copy,
-  Loading
+  Loading,
+  LinkCloud,
+  Connection,
+  Plus,
+  Terminal,
+  Rocket,
+  Shield,
+  Log,
+  FileText,
+  User
 } from '@icon-park/svg';
 
 export interface TaskHistoryItem {
@@ -37,13 +46,27 @@ export class AICommandCenterRenderer {
   }
 
   /**
+   * 获取连接状态
+   */
+  private getConnectionState(): { isConnected: boolean; serverInfo?: any } {
+    const stateManager = (window as any).app?.stateManager;
+    const state = stateManager?.getState();
+    return {
+      isConnected: state?.isConnected || false,
+      serverInfo: state?.serverInfo
+    };
+  }
+
+  /**
    * 渲染 AI 命令中心主界面
    */
   render(): string {
+    const { isConnected, serverInfo } = this.getConnectionState();
+
     return `
       <div class="ai-command-center">
-        <!-- 顶部命令输入区 -->
-        ${this.renderCommandInput()}
+        <!-- 顶部区域：标题 + 输入区 -->
+        ${this.renderHeader(isConnected)}
 
         <!-- 中部：技能卡片 + 主机状态 -->
         <div class="ai-command-center-main">
@@ -54,7 +77,7 @@ export class AICommandCenterRenderer {
 
           <!-- 右侧：主机状态面板 -->
           <div class="ai-host-panel">
-            ${this.renderHostStatus()}
+            ${this.renderHostStatus(isConnected, serverInfo)}
           </div>
         </div>
 
@@ -76,7 +99,7 @@ export class AICommandCenterRenderer {
 
         .ai-command-center-main {
           display: grid;
-          grid-template-columns: 1fr 320px;
+          grid-template-columns: 1fr 340px;
           gap: var(--spacing-md);
           flex: 1;
           min-height: 0;
@@ -103,19 +126,47 @@ export class AICommandCenterRenderer {
           border: 1px solid var(--border-color);
           border-radius: var(--border-radius-lg);
           padding: var(--spacing-md);
-          min-height: 200px;
-          max-height: 300px;
+          min-height: 180px;
+          max-height: 280px;
           overflow-y: auto;
+        }
+
+        /* 顶部标题区域 */
+        .ai-header {
+          background: linear-gradient(135deg, var(--primary-color) 0%, #8b5cf6 100%);
+          border-radius: var(--border-radius-lg);
+          padding: var(--spacing-lg);
+          color: white;
+        }
+
+        .ai-header-title {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-sm);
+          margin-bottom: var(--spacing-xs);
+        }
+
+        .ai-header-title h1 {
+          font-size: 20px;
+          font-weight: 600;
+          margin: 0;
+        }
+
+        .ai-header-subtitle {
+          font-size: 13px;
+          opacity: 0.9;
+          margin-bottom: var(--spacing-md);
         }
 
         /* 命令输入框样式 */
         .ai-command-input-wrapper {
           display: flex;
           gap: var(--spacing-sm);
-          background: var(--bg-secondary);
-          border: 1px solid var(--border-color);
-          border-radius: var(--border-radius-lg);
-          padding: var(--spacing-sm);
+          background: rgba(255, 255, 255, 0.15);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          border-radius: var(--border-radius);
+          padding: var(--spacing-xs);
         }
 
         .ai-command-input {
@@ -124,16 +175,16 @@ export class AICommandCenterRenderer {
           border: none;
           outline: none;
           font-size: 14px;
-          color: var(--text-primary);
+          color: white;
           padding: var(--spacing-sm);
           resize: none;
           min-height: 44px;
-          max-height: 120px;
+          max-height: 100px;
           font-family: inherit;
         }
 
         .ai-command-input::placeholder {
-          color: var(--text-tertiary);
+          color: rgba(255, 255, 255, 0.6);
         }
 
         .ai-command-submit {
@@ -142,18 +193,18 @@ export class AICommandCenterRenderer {
           justify-content: center;
           width: 44px;
           height: 44px;
-          background: var(--primary-color);
+          background: white;
           border: none;
           border-radius: var(--border-radius);
-          color: white;
+          color: var(--primary-color);
           cursor: pointer;
           transition: all 0.2s;
           flex-shrink: 0;
         }
 
-        .ai-command-submit:hover {
-          opacity: 0.9;
-          transform: scale(1.02);
+        .ai-command-submit:hover:not(:disabled) {
+          transform: scale(1.05);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
         .ai-command-submit:disabled {
@@ -163,9 +214,31 @@ export class AICommandCenterRenderer {
         }
 
         /* 技能卡片样式 */
+        .ai-skill-section {
+          margin-bottom: var(--spacing-md);
+        }
+
+        .ai-section-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: var(--spacing-sm);
+        }
+
+        .ai-section-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .ai-section-hint {
+          font-size: 11px;
+          color: var(--text-tertiary);
+        }
+
         .ai-skill-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+          grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
           gap: var(--spacing-sm);
         }
 
@@ -186,11 +259,13 @@ export class AICommandCenterRenderer {
         .ai-skill-card:hover {
           border-color: var(--primary-color);
           background: var(--bg-tertiary);
+          transform: translateY(-2px);
         }
 
         .ai-skill-card.selected {
           border-color: var(--primary-color);
           background: rgba(59, 130, 246, 0.1);
+          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
         }
 
         .ai-skill-icon {
@@ -199,15 +274,56 @@ export class AICommandCenterRenderer {
         }
 
         .ai-skill-name {
-          font-size: 13px;
+          font-size: 12px;
           font-weight: 500;
           color: var(--text-primary);
         }
 
         .ai-skill-desc {
-          font-size: 11px;
+          font-size: 10px;
           color: var(--text-secondary);
           line-height: 1.3;
+        }
+
+        /* 技能标签 */
+        .ai-selected-skills {
+          margin-top: var(--spacing-md);
+          padding-top: var(--spacing-sm);
+          border-top: 1px solid var(--border-color);
+        }
+
+        .ai-selected-label {
+          font-size: 11px;
+          color: var(--text-tertiary);
+          margin-bottom: var(--spacing-xs);
+          display: block;
+        }
+
+        .ai-skill-tags {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px;
+        }
+
+        .ai-skill-tag {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 4px 8px;
+          background: rgba(59, 130, 246, 0.1);
+          border: 1px solid var(--primary-color);
+          border-radius: 4px;
+          font-size: 11px;
+          color: var(--primary-color);
+        }
+
+        .ai-skill-tag-remove {
+          cursor: pointer;
+          opacity: 0.7;
+        }
+
+        .ai-skill-tag-remove:hover {
+          opacity: 1;
         }
 
         /* 主机状态样式 */
@@ -242,6 +358,9 @@ export class AICommandCenterRenderer {
 
         .ai-host-label {
           color: var(--text-secondary);
+          display: flex;
+          align-items: center;
+          gap: 6px;
         }
 
         .ai-host-value {
@@ -255,6 +374,96 @@ export class AICommandCenterRenderer {
 
         .ai-host-value.disconnected {
           color: var(--text-tertiary);
+        }
+
+        /* 未连接引导 */
+        .ai-disconnected-guide {
+          text-align: center;
+          padding: var(--spacing-lg);
+        }
+
+        .ai-disconnected-icon {
+          width: 64px;
+          height: 64px;
+          border-radius: 50%;
+          background: var(--bg-tertiary);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin: 0 auto var(--spacing-md);
+          color: var(--text-tertiary);
+        }
+
+        .ai-disconnected-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+          margin-bottom: var(--spacing-xs);
+        }
+
+        .ai-disconnected-desc {
+          font-size: 12px;
+          color: var(--text-secondary);
+          margin-bottom: var(--spacing-md);
+          line-height: 1.5;
+        }
+
+        .ai-connect-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 16px;
+          background: var(--primary-color);
+          color: white;
+          border: none;
+          border-radius: var(--border-radius);
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .ai-connect-btn:hover {
+          opacity: 0.9;
+          transform: translateY(-1px);
+        }
+
+        /* 快速操作 */
+        .ai-quick-actions {
+          margin-top: var(--spacing-md);
+          padding-top: var(--spacing-sm);
+          border-top: 1px solid var(--border-color);
+        }
+
+        .ai-quick-actions-label {
+          font-size: 11px;
+          color: var(--text-tertiary);
+          margin-bottom: var(--spacing-xs);
+          display: block;
+        }
+
+        .ai-quick-buttons {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px;
+        }
+
+        .ai-quick-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 6px 10px;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          font-size: 11px;
+          color: var(--text-primary);
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .ai-quick-btn:hover {
+          border-color: var(--primary-color);
+          background: var(--bg-tertiary);
         }
 
         /* 结果区域样式 */
@@ -315,6 +524,11 @@ export class AICommandCenterRenderer {
           height: 100%;
           color: var(--text-tertiary);
           gap: var(--spacing-sm);
+        }
+
+        .ai-result-empty-icon {
+          font-size: 32px;
+          opacity: 0.5;
         }
 
         /* 步骤列表样式 */
@@ -379,11 +593,39 @@ export class AICommandCenterRenderer {
         }
 
         /* 历史记录样式 */
+        .ai-history-section {
+          margin-top: var(--spacing-md);
+          padding-top: var(--spacing-sm);
+          border-top: 1px solid var(--border-color);
+        }
+
+        .ai-history-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: var(--spacing-sm);
+        }
+
+        .ai-history-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .ai-history-clear {
+          background: none;
+          border: none;
+          color: var(--text-tertiary);
+          font-size: 11px;
+          cursor: pointer;
+          padding: 2px 6px;
+        }
+
         .ai-history-list {
           display: flex;
           flex-direction: column;
           gap: var(--spacing-xs);
-          max-height: 150px;
+          max-height: 120px;
           overflow-y: auto;
         }
 
@@ -434,10 +676,10 @@ export class AICommandCenterRenderer {
           border: 2px solid var(--border-color);
           border-top-color: var(--primary-color);
           border-radius: 50%;
-          animation: spin 1s linear infinite;
+          animation: ai-spin 1s linear infinite;
         }
 
-        @keyframes spin {
+        @keyframes ai-spin {
           to { transform: rotate(360deg); }
         }
       </style>
@@ -445,29 +687,38 @@ export class AICommandCenterRenderer {
   }
 
   /**
-   * 渲染命令输入框
+   * 渲染顶部标题区
    */
-  private renderCommandInput(): string {
+  private renderHeader(isConnected: boolean): string {
     return `
-      <div class="ai-command-input-wrapper">
-        <textarea
-          id="ai-command-input"
-          class="ai-command-input"
-          placeholder="输入任务描述，如：帮我检查系统安全、查看异常登录日志、修复 SSH 安全配置..."
-          rows="1"
-          ${this.isRunning ? 'disabled' : ''}
-        ></textarea>
-        <button
-          id="ai-command-submit"
-          class="ai-command-submit"
-          ${this.isRunning ? 'disabled' : ''}
-          onclick="window.aiCommandCenter?.executeTask()"
-        >
-          ${this.isRunning
-            ? `<div class="ai-loading-spinner" style="width: 18px; height: 18px; border-width: 2px;"></div>`
-            : Send({ theme: 'outline', size: '18', fill: 'currentColor' })
-          }
-        </button>
+      <div class="ai-header">
+        <div class="ai-header-title">
+          <span style="font-size: 24px;">🎯</span>
+          <h1>AI 指挥台</h1>
+        </div>
+        <div class="ai-header-subtitle">
+          一句话下达任务，AI 帮你分析主机并执行检测
+        </div>
+        <div class="ai-command-input-wrapper">
+          <textarea
+            id="ai-command-input"
+            class="ai-command-input"
+            placeholder="${isConnected ? '输入任务描述，如：帮我检查系统安全、查看异常登录日志...' : '连接服务器后即可下达 AI 任务...'}"
+            rows="1"
+            ${this.isRunning || !isConnected ? 'disabled' : ''}
+          ></textarea>
+          <button
+            id="ai-command-submit"
+            class="ai-command-submit"
+            ${this.isRunning || !isConnected ? 'disabled' : ''}
+            onclick="window.aiCommandCenter?.executeTask()"
+          >
+            ${this.isRunning
+              ? `<div class="ai-loading-spinner" style="width: 18px; height: 18px; border-width: 2px; border-color: var(--primary-color); border-top-color: transparent;"></div>`
+              : Send({ theme: 'outline', size: '18', fill: 'currentColor' })
+            }
+          </button>
+        </div>
       </div>
     `;
   }
@@ -480,9 +731,9 @@ export class AICommandCenterRenderer {
 
     return `
       <div class="ai-skill-section">
-        <div class="ai-section-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--spacing-sm);">
-          <span style="font-size: 13px; font-weight: 600; color: var(--text-primary);">🎯 技能快捷入口</span>
-          <span style="font-size: 11px; color: var(--text-tertiary);">点击选择技能</span>
+        <div class="ai-section-header">
+          <span class="ai-section-title">🎯 技能快捷入口</span>
+          <span class="ai-section-hint">点击选择技能</span>
         </div>
         <div class="ai-skill-grid">
           ${shortcuts.map(shortcut => {
@@ -504,25 +755,15 @@ export class AICommandCenterRenderer {
 
       <!-- 已选技能标签 -->
       ${this.selectedSkills.length > 0 ? `
-        <div style="margin-top: var(--spacing-md); padding-top: var(--spacing-sm); border-top: 1px solid var(--border-color);">
-          <span style="font-size: 11px; color: var(--text-tertiary); margin-bottom: var(--spacing-xs); display: block;">已选技能：</span>
-          <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+        <div class="ai-selected-skills">
+          <span class="ai-selected-label">已选技能：</span>
+          <div class="ai-skill-tags">
             ${this.selectedSkills.map(skillId => {
               const skill = shortcuts.find(s => s.id === skillId);
               return skill ? `
-                <span style="
-                  display: inline-flex;
-                  align-items: center;
-                  gap: 4px;
-                  padding: 4px 8px;
-                  background: rgba(59, 130, 246, 0.1);
-                  border: 1px solid var(--primary-color);
-                  border-radius: 4px;
-                  font-size: 11px;
-                  color: var(--primary-color);
-                ">
+                <span class="ai-skill-tag">
                   ${skill.icon} ${skill.name}
-                  <span onclick="event.stopPropagation(); window.aiCommandCenter?.toggleSkill('${skillId}')" style="cursor: pointer; opacity: 0.7;">×</span>
+                  <span class="ai-skill-tag-remove" onclick="event.stopPropagation(); window.aiCommandCenter?.toggleSkill('${skillId}')">×</span>
                 </span>
               ` : '';
             }).join('')}
@@ -531,29 +772,16 @@ export class AICommandCenterRenderer {
       ` : ''}
 
       <!-- 最近任务历史 -->
-      <div style="margin-top: var(--spacing-md); padding-top: var(--spacing-sm); border-top: 1px solid var(--border-color);">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--spacing-sm);">
-          <span style="font-size: 13px; font-weight: 600; color: var(--text-primary);">📋 最近任务</span>
+      <div class="ai-history-section">
+        <div class="ai-history-header">
+          <span class="ai-history-title">📋 最近任务</span>
           ${this.taskHistory.length > 0 ? `
-            <button
-              onclick="window.aiCommandCenter?.clearHistory()"
-              style="
-                background: none;
-                border: none;
-                color: var(--text-tertiary);
-                font-size: 11px;
-                cursor: pointer;
-                padding: 2px 6px;
-              "
-            >清空</button>
+            <button class="ai-history-clear" onclick="window.aiCommandCenter?.clearHistory()">清空</button>
           ` : ''}
         </div>
         <div class="ai-history-list">
           ${this.taskHistory.length > 0 ? this.taskHistory.slice(0, 5).map(item => `
-            <div
-              class="ai-history-item"
-              onclick="window.aiCommandCenter?.loadHistoryItem('${item.id}')"
-            >
+            <div class="ai-history-item" onclick="window.aiCommandCenter?.loadHistoryItem('${item.id}')">
               <span class="ai-step-icon">
                 ${item.status === 'completed'
                   ? CheckOne({ theme: 'filled', size: '14', fill: 'var(--success-color)' })
@@ -562,7 +790,7 @@ export class AICommandCenterRenderer {
                     : Loading({ theme: 'outline', size: '14', fill: 'var(--primary-color)' })
                 }
               </span>
-              <span class="ai-history-task">${this.escapeHtml(item.task.substring(0, 50))}${item.task.length > 50 ? '...' : ''}</span>
+              <span class="ai-history-task">${this.escapeHtml(item.task.substring(0, 40))}${item.task.length > 40 ? '...' : ''}</span>
               <span class="ai-history-time">${this.formatTime(item.timestamp)}</span>
             </div>
           `).join('') : `
@@ -578,12 +806,7 @@ export class AICommandCenterRenderer {
   /**
    * 渲染主机状态面板
    */
-  private renderHostStatus(): string {
-    const stateManager = (window as any).app?.stateManager;
-    const state = stateManager?.getState();
-    const isConnected = state?.isConnected;
-    const serverInfo = state?.serverInfo;
-
+  private renderHostStatus(isConnected: boolean, serverInfo?: any): string {
     return `
       <div class="ai-host-header">
         <span style="font-size: 16px;">${Message({ theme: 'outline', size: '16', fill: 'currentColor' })}</span>
@@ -592,7 +815,7 @@ export class AICommandCenterRenderer {
 
       <div class="ai-host-info">
         <div class="ai-host-item">
-          <span class="ai-host-label">连接状态</span>
+          <span class="ai-host-label">${Connection({ theme: 'outline', size: '14', fill: 'currentColor' })} 连接状态</span>
           <span class="ai-host-value ${isConnected ? 'connected' : 'disconnected'}">
             ${isConnected ? '● 已连接' : '○ 未连接'}
           </span>
@@ -600,64 +823,52 @@ export class AICommandCenterRenderer {
 
         ${isConnected && serverInfo ? `
           <div class="ai-host-item">
-            <span class="ai-host-label">主机名</span>
+            <span class="ai-host-label">${FileText({ theme: 'outline', size: '14', fill: 'currentColor' })} 主机名</span>
             <span class="ai-host-value">${serverInfo.name || serverInfo.host || 'N/A'}</span>
           </div>
           <div class="ai-host-item">
-            <span class="ai-host-label">IP地址</span>
+            <span class="ai-host-label">${Log({ theme: 'outline', size: '14', fill: 'currentColor' })} IP地址</span>
             <span class="ai-host-value">${serverInfo.host || 'N/A'}</span>
           </div>
           <div class="ai-host-item">
-            <span class="ai-host-label">用户名</span>
+            <span class="ai-host-label">${User({ theme: 'outline', size: '14', fill: 'currentColor' })} 用户名</span>
             <span class="ai-host-value">${serverInfo.username || 'N/A'}</span>
           </div>
-        ` : `
-          <div style="padding: var(--spacing-md); text-align: center; color: var(--text-tertiary); font-size: 12px;">
-            请先连接服务器
+        ` : ''}
+
+        ${!isConnected ? `
+          <div class="ai-disconnected-guide">
+            <div class="ai-disconnected-icon">
+              ${LinkCloud({ theme: 'outline', size: '32', fill: 'currentColor' })}
+            </div>
+            <div class="ai-disconnected-title">未连接服务器</div>
+            <div class="ai-disconnected-desc">
+              当前未连接服务器，请先建立 SSH 连接后执行主机任务
+            </div>
+            <button class="ai-connect-btn" onclick="window.aiCommandCenter?.openConnection()">
+              ${Plus({ theme: 'outline', size: '14', fill: 'currentColor' })}
+              连接服务器
+            </button>
           </div>
-        `}
+        ` : ''}
 
         <!-- 快速操作 -->
         ${isConnected ? `
-          <div style="margin-top: var(--spacing-md); padding-top: var(--spacing-sm); border-top: 1px solid var(--border-color);">
-            <span style="font-size: 11px; color: var(--text-tertiary); margin-bottom: var(--spacing-xs); display: block;">快速操作</span>
-            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-              <button
-                onclick="window.aiCommandCenter?.quickTask('检查系统安全状态')"
-                style="
-                  padding: 6px 10px;
-                  background: var(--bg-primary);
-                  border: 1px solid var(--border-color);
-                  border-radius: 4px;
-                  font-size: 11px;
-                  color: var(--text-primary);
-                  cursor: pointer;
-                "
-              >🔍 安全检查</button>
-              <button
-                onclick="window.aiCommandCenter?.quickTask('查看异常登录日志')"
-                style="
-                  padding: 6px 10px;
-                  background: var(--bg-primary);
-                  border: 1px solid var(--border-color);
-                  border-radius: 4px;
-                  font-size: 11px;
-                  color: var(--text-primary);
-                  cursor: pointer;
-                "
-              >📋 登录日志</button>
-              <button
-                onclick="window.aiCommandCenter?.quickTask('检查可疑进程')"
-                style="
-                  padding: 6px 10px;
-                  background: var(--bg-primary);
-                  border: 1px solid var(--border-color);
-                  border-radius: 4px;
-                  font-size: 11px;
-                  color: var(--text-primary);
-                  cursor: pointer;
-                "
-              >⚙️ 可疑进程</button>
+          <div class="ai-quick-actions">
+            <span class="ai-quick-actions-label">快速操作</span>
+            <div class="ai-quick-buttons">
+              <button class="ai-quick-btn" onclick="window.aiCommandCenter?.quickTask('检查系统安全状态')">
+                ${Shield({ theme: 'outline', size: '12', fill: 'currentColor' })} 安全检查
+              </button>
+              <button class="ai-quick-btn" onclick="window.aiCommandCenter?.quickTask('查看异常登录日志')">
+                ${Log({ theme: 'outline', size: '12', fill: 'currentColor' })} 登录日志
+              </button>
+              <button class="ai-quick-btn" onclick="window.aiCommandCenter?.quickTask('检查可疑进程')">
+                ${Terminal({ theme: 'outline', size: '12', fill: 'currentColor' })} 可疑进程
+              </button>
+              <button class="ai-quick-btn" onclick="window.aiCommandCenter?.quickTask('检查系统资源使用情况')">
+                ${Rocket({ theme: 'outline', size: '12', fill: 'currentColor' })} 资源情况
+              </button>
             </div>
           </div>
         ` : ''}
@@ -693,7 +904,7 @@ export class AICommandCenterRenderer {
           </span>
         </div>
         <div class="ai-result-empty">
-          <span style="font-size: 32px;">💬</span>
+          <span class="ai-result-empty-icon">💬</span>
           <span>输入任务描述开始 AI 对话</span>
         </div>
       `;
@@ -709,18 +920,10 @@ export class AICommandCenterRenderer {
           <span>${this.currentResult.status === 'completed' ? '执行完成' : '执行失败'}</span>
         </span>
         <div class="ai-result-actions">
-          <button
-            class="ai-result-action-btn"
-            onclick="window.aiCommandCenter?.copyResult()"
-            title="复制结果"
-          >
+          <button class="ai-result-action-btn" onclick="window.aiCommandCenter?.copyResult()" title="复制结果">
             ${Copy({ theme: 'outline', size: '14', fill: 'currentColor' })}
           </button>
-          <button
-            class="ai-result-action-btn"
-            onclick="window.aiCommandCenter?.refreshResult()"
-            title="刷新"
-          >
+          <button class="ai-result-action-btn" onclick="window.aiCommandCenter?.refreshResult()" title="刷新">
             ${Refresh({ theme: 'outline', size: '14', fill: 'currentColor' })}
           </button>
         </div>
@@ -831,6 +1034,17 @@ export class AICommandCenterRenderer {
   }
 
   /**
+   * 打开连接面板
+   */
+  openConnection(): void {
+    const modernUIRenderer = (window as any).app?.modernUIRenderer;
+
+    if (modernUIRenderer?.showServerModal) {
+      modernUIRenderer.showServerModal();
+    }
+  }
+
+  /**
    * 切换技能选择
    */
   toggleSkill(skillId: string): void {
@@ -871,7 +1085,6 @@ export class AICommandCenterRenderer {
     const stateManager = (window as any).app?.stateManager;
     const state = stateManager?.getState();
     if (!state?.isConnected) {
-      alert('请先连接服务器');
       return;
     }
 
@@ -1013,10 +1226,7 @@ export class AICommandCenterRenderer {
     const historyList = document.querySelector('.ai-history-list');
     if (historyList) {
       historyList.innerHTML = this.taskHistory.slice(0, 5).map(item => `
-        <div
-          class="ai-history-item"
-          onclick="window.aiCommandCenter?.loadHistoryItem('${item.id}')"
-        >
+        <div class="ai-history-item" onclick="window.aiCommandCenter?.loadHistoryItem('${item.id}')">
           <span class="ai-step-icon">
             ${item.status === 'completed'
               ? CheckOne({ theme: 'filled', size: '14', fill: 'var(--success-color)' })
@@ -1025,7 +1235,7 @@ export class AICommandCenterRenderer {
                 : Loading({ theme: 'outline', size: '14', fill: 'var(--primary-color)' })
             }
           </span>
-          <span class="ai-history-task">${this.escapeHtml(item.task.substring(0, 50))}${item.task.length > 50 ? '...' : ''}</span>
+          <span class="ai-history-task">${this.escapeHtml(item.task.substring(0, 40))}${item.task.length > 40 ? '...' : ''}</span>
           <span class="ai-history-time">${this.formatTime(item.timestamp)}</span>
         </div>
       `).join('');

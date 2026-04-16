@@ -28,8 +28,6 @@ export interface AppSettings {
     showStatusBar: boolean;
     compactMode: boolean;
     animationsEnabled: boolean;
-    globalFont: string; // 新增：全局字体设置
-    globalFontSize: number; // 新增：全局字体大小设置
   };
   ssh: {
     keepAliveInterval: number;
@@ -92,11 +90,9 @@ export class SettingsManager {
       },
       ui: {
         sidebarWidth: 280,
-        showStatusBar, // 根据操作系统动态设置
+        showStatusBar,
         compactMode: false,
-        animationsEnabled: true,
-        globalFont: 'system', // 新增：默认使用系统字体
-        globalFontSize: 14 // 新增：默认字体大小14px
+        animationsEnabled: true
       },
       ssh: {
         keepAliveInterval: 30000, // 30秒
@@ -419,24 +415,10 @@ export class SettingsManager {
    */
   private applySettingsToUI(): void {
     try {
-      // 应用全局字体设置
-      if (this.settings.ui.globalFont && this.settings.ui.globalFont !== 'system') {
-        // 如果字体名称不包含引号，自动添加
-        let fontFamily = this.settings.ui.globalFont;
-        if (!fontFamily.includes("'") && !fontFamily.includes('"')) {
-          fontFamily = `'${fontFamily}', sans-serif`;
-        }
-        document.documentElement.style.setProperty('--font-family', fontFamily);
-      } else {
-        document.documentElement.style.removeProperty('--font-family');
-      }
-
-      // 应用全局字体大小设置
-      if (this.settings.ui.globalFontSize) {
-        document.documentElement.style.setProperty('--font-size', `${this.settings.ui.globalFontSize}px`);
-      } else {
-        document.documentElement.style.removeProperty('--font-size');
-      }
+      document.documentElement.style.setProperty(
+        '--font-family',
+        '-apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif'
+      );
 
       console.log('✅ 设置已应用到界面');
     } catch (error) {

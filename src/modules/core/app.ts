@@ -14,21 +14,26 @@ import { SystemInfoManager } from '../system/systemInfoManager';
 import { sshConnectionManager } from '../remote/sshConnectionManager';
 import { sshTerminalManager } from '../ssh/sshTerminalManager';
 
+import type { AppPage } from '../ui/pageTypes';
+
+export type { AppPage, UIMode } from '../ui/pageTypes';
+
 export interface ServerInfo {
   name: string;
   host: string;
   port: number;
   username?: string;
-  detailedInfo?: any; // 用于存储系统详细信息
+  detailedInfo?: any;
 }
 
 export interface AppState {
   theme: 'light' | 'dark' | 'sakura';
+  uiMode: 'classic' | 'ai';
   isConnected: boolean;
-  currentServer?: string; // 保留向后兼容
-  serverInfo?: ServerInfo; // 新增详细服务器信息
+  currentServer?: string;
+  serverInfo?: any;
   loading: boolean;
-  currentPage: 'dashboard' | 'system-info' | 'ssh-terminal' | 'remote-operations' | 'emergency-commands' | 'log-analysis' | 'settings' | 'quick-detection' | 'database' | 'payloader' | 'ai-chat' | 'ai-command-center';
+  currentPage: AppPage;
 }
 
 export class LovelyResApp {
@@ -173,6 +178,30 @@ export class LovelyResApp {
   }
 
   /**
+   * 设置 UI 模式
+   */
+  setUIMode(mode: 'classic' | 'ai'): void {
+    const oldMode = this.stateManager.getUIMode();
+    if (oldMode === mode) {
+      return;
+    }
+    this.stateManager.setUIMode(mode);
+    this.modernUIRenderer.updateState(this.stateManager.getState());
+    this.render();
+    this.showMessage(`已切换到${mode === 'classic' ? '经典' : 'AI'}模式`, 'success');
+  }
+
+  /**
+   * 切换 UI 模式
+   */
+  toggleUIMode(): void {
+    const newMode = this.stateManager.toggleUIMode();
+    this.modernUIRenderer.updateState(this.stateManager.getState());
+    this.render();
+    this.showMessage(`已切换到${newMode === 'classic' ? '经典' : 'AI'}模式`, 'success');
+  }
+
+  /**
    * 渲染应用界面
    */
   render(): void {
@@ -305,6 +334,15 @@ export class LovelyResApp {
             this.modernUIRenderer.updateState(this.stateManager.getState());
             this.render();
         }
+    };
+
+    // UI 模式切换
+    (window as any).toggleUIMode = () => {
+        this.toggleUIMode();
+    };
+
+    (window as any).setUIMode = (mode: 'classic' | 'ai') => {
+        this.setUIMode(mode);
     };
   }
 

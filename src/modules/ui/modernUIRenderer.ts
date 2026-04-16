@@ -36,7 +36,6 @@ import {
   Upload,
   FolderPlus,
   History,
-  // 快速检测图标
   Lock,
   Shield,
   Analysis,
@@ -56,8 +55,53 @@ import {
   Log,
   Data,
   Left,
-  Right
+  Right,
+  Message,
+  Send,
+  Loading,
+  Copy
 } from '@icon-park/svg';
+
+import {
+  getNavigationItemsForMode,
+  type IconKey
+} from './navigationConfig';
+
+const ICON_MAP: Record<IconKey, any> = {
+  Dashboard,
+  ApplicationMenu,
+  FolderOpen,
+  Code,
+  Rocket,
+  Data,
+  Log,
+  Robot,
+  Calendar,
+  SettingTwo,
+  User,
+  Lock,
+  Shield,
+  Analysis,
+  Fire,
+  FileText,
+  Config,
+  NetworkTree,
+  System,
+  Time,
+  SettingConfig,
+  Cpu,
+  Memory,
+  Speed,
+  LinkCloud,
+  BookOpen,
+  Message,
+  CheckOne,
+  CloseOne,
+  Refresh,
+  Copy,
+  Loading,
+  Send
+};
 
 // 添加系统信息页面的样式
 const systemInfoStyles = `
@@ -432,83 +476,15 @@ export class ModernUIRenderer {
    */
   private renderNavigationMenu(): string {
     const currentPage = this.state.currentPage;
-    const menuItems = [
-      {
-        id: 'dashboard',
-        icon: Dashboard({ theme: 'outline', size: '18', fill: 'currentColor' }),
-        title: '仪表板',
-        description: '查看服务器实时状态概览',
-        active: currentPage === 'dashboard'
-      },
-      {
-        id: 'system-info',
-        icon: ApplicationMenu({ theme: 'outline', size: '18', fill: 'currentColor' }),
-        title: '系统信息',
-        description: '查看详细系统配置信息',
-        active: currentPage === 'system-info'
-      },
-      {
-        id: 'remote-operations',
-        icon: FolderOpen({ theme: 'outline', size: '18', fill: 'currentColor' }),
-        title: 'SFTP文件',
-        description: '远程文件管理与传输',
-        active: currentPage === 'remote-operations'
-      },
-      {
-        id: 'emergency-commands',
-        icon: Code({ theme: 'outline', size: '18', fill: 'currentColor' }),
-        title: '命令执行',
-        description: '批量执行应急响应命令',
-        active: currentPage === 'emergency-commands'
-      },
-      {
-        id: 'quick-detection',
-        icon: Rocket({ theme: 'outline', size: '18', fill: 'currentColor' }),
-        title: '快速检测',
-        description: '一键安全检测与风险评估',
-        active: currentPage === 'quick-detection'
-      },
-      {
-        id: 'database',
-        icon: Data({ theme: 'outline', size: '18', fill: 'currentColor' }),
-        title: '数据库',
-        description: '数据库管理(暂不可用)',
-        active: currentPage === 'database'
-      },
-      {
-        id: 'log-analysis',
-        icon: Log({ theme: 'outline', size: '18', fill: 'currentColor' }),
-        title: '日志审计',
-        description: '系统日志分析与溯源',
-        active: currentPage === 'log-analysis'
-      },
-      {
-        id: 'ai-chat',
-        icon: Robot({ theme: 'outline', size: '18', fill: 'currentColor' }),
-        title: 'AI聊天',
-        description: 'AI智能助手辅助分析',
-        active: currentPage === 'ai-chat'
-      },
-      {
-        id: 'ai-command-center',
-        icon: Robot({ theme: 'outline', size: '18', fill: 'currentColor' }),
-        title: 'AI命令中心',
-        description: '智能任务编排与执行',
-        active: currentPage === 'ai-command-center'
-      },
-      {
-        id: 'payloader',
-        icon: Code({ theme: 'outline', size: '18', fill: 'currentColor' }),
-        title: 'Payload工具',
-        description: '安全测试Payload生成',
-        active: currentPage === 'payloader'
-      }
-    ];
+    const uiMode = this.state.uiMode;
+    const navItems = getNavigationItemsForMode(uiMode);
 
     return `
       <div class="nav-category">
-        ${menuItems.map(item => {
-            const isActive = item.active;
+        ${navItems.map(item => {
+            const isActive = item.id === currentPage;
+            const iconFn = ICON_MAP[item.iconKey];
+            const icon = iconFn ? iconFn({ theme: 'outline', size: '18', fill: 'currentColor' }) : '';
 
             return `
               <div class="nav-item ${isActive ? 'active' : ''}" data-nav-id="${item.id}" data-tooltip="${item.title}" data-description="${item.description}">
@@ -516,7 +492,7 @@ export class ModernUIRenderer {
                 ${isActive ? `<div class="nav-item-indicator"></div>` : ''}
 
                 <span class="nav-item-icon">
-                    ${item.icon}
+                    ${icon}
                 </span>
                 <span class="nav-item-text">${item.title}</span>
               </div>
@@ -645,7 +621,8 @@ export class ModernUIRenderer {
       return this.renderLoadingState();
     }
 
-    if (!this.state.isConnected) {
+    // AI 模式下，ai-command-center 页面即使未连接也显示
+    if (!this.state.isConnected && !(this.state.currentPage === 'ai-command-center' && this.state.uiMode === 'ai')) {
       return this.renderConnectionPrompt();
     }
 
@@ -654,7 +631,6 @@ export class ModernUIRenderer {
       case 'system-info':
         return this.renderSystemInfo();
       case 'ssh-terminal':
-        // SSH终端在独立窗口中打开，这里显示提示信息
         return this.renderSSHTerminalRedirect();
       case 'remote-operations':
         return this.renderRemoteOperationsPage();

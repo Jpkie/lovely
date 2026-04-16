@@ -165,6 +165,14 @@ class DockerActionRequest(BaseModel):
     action: str
 
 
+class DockerLogsOptions(BaseModel):
+    tail: Optional[int] = None
+    since: Optional[str] = None
+    until: Optional[str] = None
+    timestamps: bool = False
+    follow: bool = False
+
+
 class DockerLogsRequest(BaseModel):
     container_id: str
     options: Optional[DockerLogsOptions] = None

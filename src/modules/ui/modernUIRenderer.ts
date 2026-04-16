@@ -6,6 +6,7 @@
 import type { StateManager } from '../core/stateManager';
 import type { AppState } from '../core/app';
 import { DashboardRenderer } from './dashboardRenderer';
+import { AICommandCenterRenderer } from '../ai/aiCommandCenterRenderer';
 
 import { SftpContextMenuRenderer } from './sftpContextMenu';
 import { LogAnalysisRenderer } from './logAnalysisRenderer';
@@ -70,6 +71,7 @@ export class ModernUIRenderer {
   private state: AppState;
   private dashboardRenderer: DashboardRenderer;
   private logAnalysisRenderer: LogAnalysisRenderer;
+  private aiCommandCenterRenderer: AICommandCenterRenderer;
 
   public sftpContextMenuRenderer: SftpContextMenuRenderer;
   public databaseRenderer: DatabaseRenderer;
@@ -79,8 +81,12 @@ export class ModernUIRenderer {
     this.state = stateManager.getState();
     this.dashboardRenderer = new DashboardRenderer();
     this.logAnalysisRenderer = new LogAnalysisRenderer();
+    this.aiCommandCenterRenderer = new AICommandCenterRenderer();
     this.sftpContextMenuRenderer = new SftpContextMenuRenderer();
     this.databaseRenderer = new DatabaseRenderer();
+
+    // 暴露 AI 命令中心渲染器到全局对象
+    (window as any).aiCommandCenter = this.aiCommandCenterRenderer;
 
     // 注入系统信息页面样式
     if (!document.querySelector('#system-info-styles')) {
@@ -484,6 +490,13 @@ export class ModernUIRenderer {
         active: currentPage === 'ai-chat'
       },
       {
+        id: 'ai-command-center',
+        icon: Robot({ theme: 'outline', size: '18', fill: 'currentColor' }),
+        title: 'AI命令中心',
+        description: '智能任务编排与执行',
+        active: currentPage === 'ai-command-center'
+      },
+      {
         id: 'payloader',
         icon: Code({ theme: 'outline', size: '18', fill: 'currentColor' }),
         title: 'Payload工具',
@@ -657,12 +670,21 @@ export class ModernUIRenderer {
         return this.renderAIChatPage();
       case 'payloader':
         return this.renderPayloaderPage();
+      case 'ai-command-center':
+        return this.renderAICommandCenterPage();
       case 'settings':
         return this.renderSettingsPage();
       case 'dashboard':
       default:
         return this.renderDashboard();
     }
+  }
+
+  /**
+   * 渲染 AI 命令中心页面
+   */
+  private renderAICommandCenterPage(): string {
+    return this.aiCommandCenterRenderer.render();
   }
 
   /**

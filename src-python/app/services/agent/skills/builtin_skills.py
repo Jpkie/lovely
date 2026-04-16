@@ -457,20 +457,31 @@ Hostname: {hostname}
 
 def register_builtin_skills(registry) -> None:
     """注册所有内置 skills"""
+    from .auto_remediation import register_auto_remediation_skill
+    from .remediation_verification import register_remediation_verification_skill
+    from .capability_check import register_capability_check_skill
+    from .safe_config_patch import register_safe_config_patch_skill
+    from .hardening_baseline import register_hardening_baseline_skill
+    from .incident_timeline import register_incident_timeline_skill
+
     registry.register(HostTriageSkill())
     registry.register(LogInvestigationSkill())
     registry.register(ProcessHuntSkill())
     registry.register(PortHuntSkill())
     registry.register(SSHAuditSkill())
     registry.register(FixAdvisorSkill())
+    register_auto_remediation_skill(registry)
+    register_remediation_verification_skill(registry)
+    register_capability_check_skill(registry)
+    register_safe_config_patch_skill(registry)
+    register_hardening_baseline_skill(registry)
+    register_incident_timeline_skill(registry)
 
 
 def get_default_skill_registry():
     """获取默认的 skill 注册表"""
     from .registry import SkillRegistry
-    from .auto_remediation import register_auto_remediation_skill
 
     registry = SkillRegistry()
     register_builtin_skills(registry)
-    register_auto_remediation_skill(registry)
     return registry

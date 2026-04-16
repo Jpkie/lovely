@@ -28,7 +28,7 @@ export interface AppState {
   currentServer?: string; // 保留向后兼容
   serverInfo?: ServerInfo; // 新增详细服务器信息
   loading: boolean;
-  currentPage: 'dashboard' | 'system-info' | 'ssh-terminal' | 'remote-operations' | 'emergency-commands' | 'log-analysis' | 'settings' | 'quick-detection' | 'database' | 'payloader' | 'ai-chat';
+  currentPage: 'dashboard' | 'system-info' | 'ssh-terminal' | 'remote-operations' | 'emergency-commands' | 'log-analysis' | 'settings' | 'quick-detection' | 'database' | 'payloader' | 'ai-chat' | 'ai-command-center';
 }
 
 export class LovelyResApp {

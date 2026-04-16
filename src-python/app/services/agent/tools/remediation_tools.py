@@ -1428,6 +1428,676 @@ class VerifyAllFixesTool(BaseTool):
             )
 
 
+class GetRemediationBaselineTool(BaseTool):
+    """获取修复前基线"""
+
+    @property
+    def name(self) -> str:
+        return "get_remediation_baseline"
+
+    @property
+    def description(self) -> str:
+        return "从上下文中提取修复前的检测结果作为基准"
+
+    @property
+    def parameters(self) -> list:
+        return []
+
+    async def execute(
+        self, parameters: Dict[str, Any], context: Dict[str, Any]
+    ) -> AgentToolResult:
+        try:
+            baseline = context.get("remediation_baseline", {})
+            if not baseline:
+                baseline = {
+                    "ssh_audit": context.get("original_ssh_audit", None),
+                    "user_audit": context.get("original_user_audit", None),
+                    "firewall": context.get("original_firewall", None),
+                    "file_permission": context.get("original_file_permission", None),
+                }
+
+            context["baseline"] = baseline
+
+            return AgentToolResult(
+                tool_name=self.name,
+                status=ToolStatus.SUCCESS,
+                output={"baseline": baseline},
+                metadata={"baseline_collected": True},
+            )
+        except Exception as e:
+            return AgentToolResult(
+                tool_name=self.name, status=ToolStatus.ERROR, error=str(e)
+            )
+
+
+class CompareRemediationResultsTool(BaseTool):
+    """对比修复前后结果"""
+
+    @property
+    def name(self) -> str:
+        return "compare_remediation_results"
+
+    @property
+    def description(self) -> str:
+        return "对比修复前后的检测结果，生成差异报告"
+
+    @property
+    def parameters(self) -> list:
+        return []
+
+    async def execute(
+        self, parameters: Dict[str, Any], context: Dict[str, Any]
+    ) -> AgentToolResult:
+        try:
+            baseline = context.get("baseline", {})
+            current_results = context.get("current_results", {})
+            fixed_items = context.get("fixed_items", [])
+            unfixed_items = context.get("unfixed_items", [])
+
+            comparison = {
+                "baseline": baseline,
+                "current": current_results,
+                "fixed": fixed_items,
+                "unfixed": unfixed_items,
+                "improvement": len(fixed_items),
+                "remaining": len(unfixed_items),
+            }
+
+            return AgentToolResult(
+                tool_name=self.name,
+                status=ToolStatus.SUCCESS,
+                output=comparison,
+                metadata={"comparison_done": True},
+            )
+        except Exception as e:
+            return AgentToolResult(
+                tool_name=self.name, status=ToolStatus.ERROR, error=str(e)
+            )
+
+
+class GenerateVerificationReportTool(BaseTool):
+    """生成验证报告"""
+
+    @property
+    def name(self) -> str:
+        return "generate_verification_report"
+
+    @property
+    def description(self) -> str:
+        return "汇总所有验证结果，生成最终验证报告"
+
+    @property
+    def parameters(self) -> list:
+        return []
+
+    async def execute(
+        self, parameters: Dict[str, Any], context: Dict[str, Any]
+    ) -> AgentToolResult:
+        try:
+            verification_results = context.get("verification_results", {})
+            baseline = context.get("baseline", {})
+            fixed_items = context.get("fixed_items", [])
+            unfixed_items = context.get("unfixed_items", [])
+
+            all_passed = all(
+                v.get("passed", False) for v in verification_results.values()
+            )
+
+            report = {
+                "summary": {
+                    "total_items": len(fixed_items) + len(unfixed_items),
+                    "fixed_items": fixed_items,
+                    "unfixed_items": unfixed_items,
+                    "all_verified": all_passed,
+                },
+                "verification_results": verification_results,
+                "before_after_comparison": {
+                    "baseline": baseline,
+                    "current": verification_results,
+                },
+            }
+
+            return AgentToolResult(
+                tool_name=self.name,
+                status=ToolStatus.SUCCESS if all_passed else ToolStatus.PARTIAL,
+                output=report,
+                metadata={
+                    "all_passed": all_passed,
+                    "risk_level": "low" if all_passed else "medium",
+                },
+            )
+        except Exception as e:
+            return AgentToolResult(
+                tool_name=self.name, status=ToolStatus.ERROR, error=str(e)
+            )
+
+
+class CheckCriticalFilesTool(BaseTool):
+    """检查关键文件存在性"""
+
+    @property
+    def name(self) -> str:
+        return "check_critical_files"
+
+    @property
+    def description(self) -> str:
+        return "检查 SSH/PAM 等关键配置文件是否存在"
+
+    @property
+    def parameters(self) -> list:
+        return []
+
+    async def execute(
+        self, parameters: Dict[str, Any], context: Dict[str, Any]
+    ) -> AgentToolResult:
+        from app.services.ssh_manager import SSHManager
+
+        manager: SSHManager = context.get("ssh_manager")
+        if not manager or not manager.is_connected():
+            return AgentToolResult(
+                tool_name=self.name, status=ToolStatus.ERROR, error="SSH not connected"
+            )
+
+        critical_files = [
+            "/etc/ssh/sshd_config",
+            "/etc/pam.d/system-auth",
+            "/etc/pam.d/common-auth",
+            "/etc/security/pwquality.conf",
+            "/etc/login.defs",
+        ]
+
+        try:
+            results = {}
+            for filepath in critical_files:
+                result = await manager.execute_command(
+                    f"test -f {filepath} && echo 'exists' || echo 'missing'"
+                )
+                results[filepath] = (
+                    "exists"
+                    if result.exit_code == 0 and "exists" in result.output
+                    else "missing"
+                )
+
+            context["critical_files_status"] = results
+
+            return AgentToolResult(
+                tool_name=self.name,
+                status=ToolStatus.SUCCESS,
+                output={"files": results},
+                metadata={"files_checked": len(results)},
+            )
+        except Exception as e:
+            return AgentToolResult(
+                tool_name=self.name, status=ToolStatus.ERROR, error=str(e)
+            )
+
+
+class CheckServiceCapabilityTool(BaseTool):
+    """检查服务管理能力"""
+
+    @property
+    def name(self) -> str:
+        return "check_service_capability"
+
+    @property
+    def description(self) -> str:
+        return "检查 systemctl/service 命令是否可用"
+
+    @property
+    def parameters(self) -> list:
+        return []
+
+    async def execute(
+        self, parameters: Dict[str, Any], context: Dict[str, Any]
+    ) -> AgentToolResult:
+        from app.services.ssh_manager import SSHManager
+
+        manager: SSHManager = context.get("ssh_manager")
+        if not manager or not manager.is_connected():
+            return AgentToolResult(
+                tool_name=self.name, status=ToolStatus.ERROR, error="SSH not connected"
+            )
+
+        try:
+            systemd_result = await manager.execute_command(
+                "systemctl --version 2>/dev/null | head -1 || echo 'not_available'"
+            )
+            has_systemd = "systemd" in systemd_result.output
+
+            service_result = await manager.execute_command(
+                "which service 2>/dev/null || echo 'not_available'"
+            )
+            has_service = (
+                "service" in service_result.output
+                and "not_available" not in service_result.output
+            )
+
+            capabilities = {
+                "systemd": has_systemd,
+                "service": has_service,
+                "init_type": "systemd"
+                if has_systemd
+                else "sysvinit"
+                if has_service
+                else "unknown",
+            }
+
+            context["service_capabilities"] = capabilities
+
+            return AgentToolResult(
+                tool_name=self.name,
+                status=ToolStatus.SUCCESS,
+                output=capabilities,
+                metadata=capabilities,
+            )
+        except Exception as e:
+            return AgentToolResult(
+                tool_name=self.name, status=ToolStatus.ERROR, error=str(e)
+            )
+
+
+class GenerateCapabilityReportTool(BaseTool):
+    """生成能力报告"""
+
+    @property
+    def name(self) -> str:
+        return "generate_capability_report"
+
+    @property
+    def description(self) -> str:
+        return "汇总所有能力检测结果，生成 capability matrix"
+
+    @property
+    def parameters(self) -> list:
+        return []
+
+    async def execute(
+        self, parameters: Dict[str, Any], context: Dict[str, Any]
+    ) -> AgentToolResult:
+        try:
+            env_info = context.get("env_info", EnvironmentInfo())
+            firewall_type = context.get("firewall_type", "unknown")
+            service_capabilities = context.get("service_capabilities", {})
+            critical_files_status = context.get("critical_files_status", {})
+
+            all_files_exist = all(v == "exists" for v in critical_files_status.values())
+
+            blocked_reasons = []
+            if not env_info.sudo_available and env_info.current_user != "root":
+                blocked_reasons.append("当前用户无 sudo 权限，无法执行高风险操作")
+
+            if not all_files_exist:
+                missing = [
+                    k for k, v in critical_files_status.items() if v == "missing"
+                ]
+                blocked_reasons.append(f"关键文件缺失: {', '.join(missing)}")
+
+            recommendations = []
+            if env_info.sudo_available:
+                recommendations.append("具备 sudo 权限，可执行自动修复")
+            else:
+                recommendations.append("建议使用 root 用户或配置 sudo 权限")
+
+            if firewall_type == "none":
+                recommendations.append("防火墙未启用，建议启用防火墙并配置规则")
+
+            report = {
+                "environment": {
+                    "os_family": env_info.os_family,
+                    "distribution": env_info.distribution,
+                    "version": env_info.version,
+                    "package_manager": env_info.package_manager,
+                    "init_system": env_info.init_system,
+                },
+                "capabilities": {
+                    "sudo_available": env_info.sudo_available,
+                    "current_user": env_info.current_user,
+                    "firewall_type": firewall_type,
+                    "service_capabilities": service_capabilities,
+                    "critical_files_exist": all_files_exist,
+                },
+                "blocked_reasons": blocked_reasons,
+                "recommendations": recommendations,
+                "can_proceed": len(blocked_reasons) == 0,
+            }
+
+            context["capability_report"] = report
+
+            return AgentToolResult(
+                tool_name=self.name,
+                status=ToolStatus.SUCCESS,
+                output=report,
+                metadata={
+                    "can_proceed": len(blocked_reasons) == 0,
+                    "risk_level": "high" if blocked_reasons else "low",
+                },
+            )
+        except Exception as e:
+            return AgentToolResult(
+                tool_name=self.name, status=ToolStatus.ERROR, error=str(e)
+            )
+
+
+class CalculateHardeningScoreTool(BaseTool):
+    """计算基线评分"""
+
+    @property
+    def name(self) -> str:
+        return "calculate_hardening_score"
+
+    @property
+    def description(self) -> str:
+        return "综合所有检查项计算安全基线评分"
+
+    @property
+    def parameters(self) -> list:
+        return []
+
+    async def execute(
+        self, parameters: Dict[str, Any], context: Dict[str, Any]
+    ) -> AgentToolResult:
+        try:
+            hardening_results = context.get("hardening_results", {})
+
+            total_checks = 0
+            passed_checks = 0
+            failed_checks = 0
+
+            for category, result in hardening_results.items():
+                if isinstance(result, dict):
+                    total_checks += 1
+                    if result.get("passed", False):
+                        passed_checks += 1
+                    elif result.get("failed", False):
+                        failed_checks += 1
+
+            score = (
+                int((passed_checks / max(total_checks, 1)) * 100)
+                if total_checks > 0
+                else 0
+            )
+
+            risk_level = "low" if score >= 80 else "medium" if score >= 60 else "high"
+
+            score_report = {
+                "score": score,
+                "total_checks": total_checks,
+                "passed_checks": passed_checks,
+                "failed_checks": failed_checks,
+                "risk_level": risk_level,
+            }
+
+            context["hardening_score"] = score_report
+
+            return AgentToolResult(
+                tool_name=self.name,
+                status=ToolStatus.SUCCESS,
+                output=score_report,
+                metadata={"score": score, "risk_level": risk_level},
+            )
+        except Exception as e:
+            return AgentToolResult(
+                tool_name=self.name, status=ToolStatus.ERROR, error=str(e)
+            )
+
+
+class GenerateHardeningReportTool(BaseTool):
+    """生成基线加固报告"""
+
+    @property
+    def name(self) -> str:
+        return "generate_hardening_report"
+
+    @property
+    def description(self) -> str:
+        return "生成完整的基线加固报告"
+
+    @property
+    def parameters(self) -> list:
+        return []
+
+    async def execute(
+        self, parameters: Dict[str, Any], context: Dict[str, Any]
+    ) -> AgentToolResult:
+        try:
+            score = context.get(
+                "hardening_score", {"score": 0, "risk_level": "unknown"}
+            )
+            findings = context.get("all_findings", [])
+
+            auto_fix_items = []
+            manual_confirm_items = []
+            recommendation_items = []
+
+            for finding in findings:
+                severity = finding.get("severity", "low")
+                if severity in ["critical", "high"]:
+                    auto_fix_items.append(finding)
+                elif severity == "medium":
+                    manual_confirm_items.append(finding)
+                else:
+                    recommendation_items.append(finding)
+
+            report = {
+                "baseline_score": score.get("score", 0),
+                "risk_level": score.get("risk_level", "unknown"),
+                "auto_fix_count": len(auto_fix_items),
+                "manual_confirm_count": len(manual_confirm_items),
+                "recommendation_count": len(recommendation_items),
+                "auto_fix_items": auto_fix_items,
+                "manual_confirm_items": manual_confirm_items,
+                "recommendation_items": recommendation_items,
+            }
+
+            return AgentToolResult(
+                tool_name=self.name,
+                status=ToolStatus.SUCCESS,
+                output=report,
+                metadata={
+                    "score": score.get("score", 0),
+                    "risk_level": score.get("risk_level", "unknown"),
+                },
+            )
+        except Exception as e:
+            return AgentToolResult(
+                tool_name=self.name, status=ToolStatus.ERROR, error=str(e)
+            )
+
+
+class CorrelateSecurityEventsTool(BaseTool):
+    """关联安全事件"""
+
+    @property
+    def name(self) -> str:
+        return "correlate_security_events"
+
+    @property
+    def description(self) -> str:
+        return "关联时间、来源 IP、用户、进程等维度分析可疑行为"
+
+    @property
+    def parameters(self) -> list:
+        return []
+
+    async def execute(
+        self, parameters: Dict[str, Any], context: Dict[str, Any]
+    ) -> AgentToolResult:
+        try:
+            auth_logs = context.get("auth_logs", [])
+            failed_logins = context.get("failed_logins", [])
+            network_conns = context.get("network_connections", [])
+            processes = context.get("processes", [])
+            cron_jobs = context.get("cron_jobs", [])
+
+            suspicious_ips = set()
+            suspicious_users = set()
+            suspicious_processes = []
+
+            for log in failed_logins:
+                if isinstance(log, dict):
+                    ip = log.get("ip", "")
+                    user = log.get("user", "")
+                    if ip:
+                        suspicious_ips.add(ip)
+                    if user:
+                        suspicious_users.add(user)
+
+            for conn in network_conns:
+                if isinstance(conn, dict):
+                    if conn.get("state") == "ESTABLISHED" and conn.get(
+                        "foreign_address", ""
+                    ).startswith("192.168."):
+                        pass
+
+            correlation = {
+                "suspicious_ips": list(suspicious_ips),
+                "suspicious_users": list(suspicious_users),
+                "suspicious_processes": suspicious_processes,
+                "failed_login_count": len(failed_logins),
+                "cron_job_count": len(cron_jobs),
+                "correlation_done": True,
+            }
+
+            context["event_correlation"] = correlation
+
+            return AgentToolResult(
+                tool_name=self.name,
+                status=ToolStatus.SUCCESS,
+                output=correlation,
+                metadata={"correlation_done": True},
+            )
+        except Exception as e:
+            return AgentToolResult(
+                tool_name=self.name, status=ToolStatus.ERROR, error=str(e)
+            )
+
+
+class GenerateIncidentTimelineTool(BaseTool):
+    """生成事件时间线"""
+
+    @property
+    def name(self) -> str:
+        return "generate_incident_timeline"
+
+    @property
+    def description(self) -> str:
+        return "基于关联分析结果生成攻击时间线"
+
+    @property
+    def parameters(self) -> list:
+        return []
+
+    async def execute(
+        self, parameters: Dict[str, Any], context: Dict[str, Any]
+    ) -> AgentToolResult:
+        try:
+            correlation = context.get("event_correlation", {})
+            evidence = context.get("evidence_collected", {})
+
+            timeline = []
+
+            if correlation.get("failed_login_count", 0) > 0:
+                timeline.append(
+                    {
+                        "time": "unknown",
+                        "event": f"检测到 {correlation['failed_login_count']} 次失败登录",
+                        "severity": "high",
+                        "type": "authentication_failure",
+                    }
+                )
+
+            suspicious_ips = correlation.get("suspicious_ips", [])
+            if suspicious_ips:
+                timeline.append(
+                    {
+                        "time": "unknown",
+                        "event": f"可疑来源 IP: {', '.join(suspicious_ips[:5])}",
+                        "severity": "high",
+                        "type": "suspicious_source",
+                    }
+                )
+
+            timeline_report = {
+                "timeline": timeline,
+                "total_events": len(timeline),
+                "severity_breakdown": {
+                    "critical": len(
+                        [e for e in timeline if e.get("severity") == "critical"]
+                    ),
+                    "high": len([e for e in timeline if e.get("severity") == "high"]),
+                    "medium": len(
+                        [e for e in timeline if e.get("severity") == "medium"]
+                    ),
+                    "low": len([e for e in timeline if e.get("severity") == "low"]),
+                },
+            }
+
+            context["incident_timeline"] = timeline_report
+
+            return AgentToolResult(
+                tool_name=self.name,
+                status=ToolStatus.SUCCESS,
+                output=timeline_report,
+                metadata={"events_count": len(timeline)},
+            )
+        except Exception as e:
+            return AgentToolResult(
+                tool_name=self.name, status=ToolStatus.ERROR, error=str(e)
+            )
+
+
+class GenerateInvestigationReportTool(BaseTool):
+    """生成调查完整报告"""
+
+    @property
+    def name(self) -> str:
+        return "generate_investigation_report"
+
+    @property
+    def description(self) -> str:
+        return "生成包含时间线、风险归因、调查建议的完整报告"
+
+    @property
+    def parameters(self) -> list:
+        return []
+
+    async def execute(
+        self, parameters: Dict[str, Any], context: Dict[str, Any]
+    ) -> AgentToolResult:
+        try:
+            timeline = context.get("incident_timeline", {})
+            correlation = context.get("event_correlation", {})
+            evidence = context.get("evidence_collected", {})
+
+            report = {
+                "summary": {
+                    "total_events": timeline.get("total_events", 0),
+                    "suspicious_ips": correlation.get("suspicious_ips", []),
+                    "suspicious_users": correlation.get("suspicious_users", []),
+                },
+                "timeline": timeline.get("timeline", []),
+                "severity_breakdown": timeline.get("severity_breakdown", {}),
+                "next_steps": [
+                    "进一步调查可疑 IP 的来源",
+                    "检查相关用户的登录历史",
+                    "审计可疑进程的活动日志",
+                    "考虑添加 IP 黑名单或登录限制",
+                ],
+                "evidence_summary": evidence,
+            }
+
+            return AgentToolResult(
+                tool_name=self.name,
+                status=ToolStatus.SUCCESS,
+                output=report,
+                metadata={"report_generated": True},
+            )
+        except Exception as e:
+            return AgentToolResult(
+                tool_name=self.name, status=ToolStatus.ERROR, error=str(e)
+            )
+
+
 def register_remediation_tools(registry: ToolRegistry) -> None:
     """注册所有修复工具"""
     registry.register(DetectOSFamilyTool())
@@ -1445,3 +2115,14 @@ def register_remediation_tools(registry: ToolRegistry) -> None:
     registry.register(PatchUserPermissionsTool())
     registry.register(RestartServiceSafelyTool())
     registry.register(VerifyAllFixesTool())
+    registry.register(GetRemediationBaselineTool())
+    registry.register(CompareRemediationResultsTool())
+    registry.register(GenerateVerificationReportTool())
+    registry.register(CheckCriticalFilesTool())
+    registry.register(CheckServiceCapabilityTool())
+    registry.register(GenerateCapabilityReportTool())
+    registry.register(CalculateHardeningScoreTool())
+    registry.register(GenerateHardeningReportTool())
+    registry.register(CorrelateSecurityEventsTool())
+    registry.register(GenerateIncidentTimelineTool())
+    registry.register(GenerateInvestigationReportTool())

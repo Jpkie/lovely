@@ -543,7 +543,7 @@ export class ModernUIRenderer {
     return `
       <div class="main-workspace">
         <!-- 工作区内容 -->
-        <div class="workspace-content">
+        <div class="workspace-content" tabindex="-1" data-scroll-root="true">
           ${this.renderWorkspaceContent()}
         </div>
       </div>

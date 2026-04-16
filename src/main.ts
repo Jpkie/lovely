@@ -1782,6 +1782,25 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
   // 连接状态通知已移除
 
   // 刷新仪表盘
+  const ensureWorkspaceScrollReady = () => {
+    window.requestAnimationFrame(() => {
+      const workspaceContent = document.querySelector('.workspace-content') as HTMLElement | null;
+      if (!workspaceContent) {
+        return;
+      }
+
+      if (!workspaceContent.hasAttribute('tabindex')) {
+        workspaceContent.setAttribute('tabindex', '-1');
+      }
+
+      try {
+        workspaceContent.focus({ preventScroll: true });
+      } catch {
+        workspaceContent.focus();
+      }
+    });
+  };
+
   (window as any).refreshDashboard = () => {
     try {
       if (app) {
@@ -1805,6 +1824,7 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
             mainWorkspace.innerHTML = uiRenderer.renderMainWorkspace();
           }
         }
+        ensureWorkspaceScrollReady();
         console.log('✅ 仪表盘已刷新');
       }
     } catch (error) {
@@ -2571,6 +2591,7 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
         // 如果是仪表盘页面，启动自动刷新
         if (pageId === 'dashboard') {
           (window as any).startDashboardAutoRefresh();
+          ensureWorkspaceScrollReady();
         }
       } else {
         // 如果离开仪表盘页面，停止自动刷新
@@ -3238,6 +3259,7 @@ ${skillText ? '- Skill 结果：\n' + skillText : ''}
         if (currentPage === 'dashboard') {
           console.log('🔄 原地更新仪表盘数据');
           (window as any).refreshDashboard?.();
+          ensureWorkspaceScrollReady();
         } else {
           // 更新当前显示的标签页数据
           const activeTab = document.querySelector('.tab-btn.active');

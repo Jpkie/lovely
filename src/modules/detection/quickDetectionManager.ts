@@ -5,6 +5,8 @@
 
 import { invoke } from '../../shims/@tauri-apps/api/core';
 import { aiService } from '../ai/aiService';
+import { agentService } from '../ai/agentService';
+import type { AgentRunRequest } from '../ai/agentTypes';
 import {
   CheckOne,
   CloseOne,
@@ -3058,9 +3060,108 @@ ${reportSummary}
   }
 
   /**
-   * AI 自动修复风险（用户授权）
+   * AI 自动修复风险（用户授权）- Agent 模式
+   *
+   * 新流程：
+   * 1. 构造 Agent 任务（包含检测报告、服务器信息、严重/高危问题）
+   * 2. 调用 agentService.runAgentTask() 走真正的 Agent 闭环
+   * 3. 展示结构化修复结果（Plan/Trace/每步状态/错误原因/最终结论）
    */
   async autoFixRisks(): Promise<void> {
+    if (!this.currentReport) {
+      alert('暂无检测报告可修复');
+      return;
+    }
+
+    const criticalAndHighFindings = this.currentReport.items
+      .filter(item => item.result && item.result.findings.some(f =>
+        f.severity === 'critical' || f.severity === 'high'
+      ))
+      .map(item => {
+        const relevantFindings = item.result!.findings.filter(f =>
+          f.severity === 'critical' || f.severity === 'high'
+        );
+        return {
+          checkName: item.name,
+          findings: relevantFindings.map(f => ({
+            title: f.title,
+            description: f.description,
+            severity: f.severity,
+            recommendation: f.recommendation
+          }))
+        };
+      });
+
+    if (criticalAndHighFindings.length === 0) {
+      alert('当前报告没有严重或高危问题需要修复！');
+      return;
+    }
+
+    const serverInfo = this.currentReport.server;
+
+    const task = this.buildAutoRemediationTask(this.currentReport, criticalAndHighFindings, serverInfo);
+
+    const loadingModal = this.showLoadingModal('正在启动 AI 自动修复 Agent...');
+
+    try {
+      const result = await agentService.runAgentTask(task);
+
+      this.closeLoadingModal(loadingModal);
+      this.showAutoRemediationResultModal(result);
+    } catch (error: any) {
+      this.closeLoadingModal(loadingModal);
+      alert(`AI 自动修复失败：\n\n${error.message}`);
+      console.error('AI 自动修复失败:', error);
+    }
+  }
+
+  /**
+   * 构造自动修复 Agent 任务
+   */
+  buildAutoRemediationTask(
+    report: typeof this.currentReport,
+    findings: Array<{ checkName: string; findings: Array<{ title: string; description: string; severity: string; recommendation?: string }> }>,
+    serverInfo: string
+  ): AgentRunRequest {
+    const findingsFlat = findings.flatMap(f =>
+      f.findings.map(ff => ({
+        checkName: f.checkName,
+        title: ff.title,
+        description: ff.description,
+        severity: ff.severity,
+        recommendation: ff.recommendation
+      }))
+    );
+
+    const taskDescription = `自动修复检测报告中的安全问题：\n${
+      findingsFlat.map((f, i) =>
+        `${i + 1}. [${f.severity}] ${f.checkName} - ${f.title}: ${f.description}`
+      ).join('\n')
+    }`;
+
+    const context: Record<string, any> = {
+      serverInfo,
+      detectionReport: report,
+      findings: findingsFlat,
+      requireVerification: true,
+      autoRemediationMode: true,
+      maxReplanAttempts: 2,
+      sshConnected: true
+    };
+
+    return {
+      task: taskDescription,
+      skills: ['auto_remediation'],
+      context,
+      max_steps: 30
+    };
+  }
+
+  /**
+   * 旧方法保留但默认不调用 - 仅用于 fallback/debug 模式
+   * @deprecated 请使用 Agent 模式的 autoFixRisks
+   */
+  async autoFixRisksLegacy(): Promise<void> {
     if (!this.currentReport) {
       alert('暂无检测报告可修复');
       return;
@@ -3415,6 +3516,220 @@ ${problemsText}
       this.executeFixCommands(fixSolution);
     });
 
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.remove();
+    });
+  }
+
+  /**
+   * 显示 Agent 自动修复结果模态框
+   */
+  private showAutoRemediationResultModal(result: any): void {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10001;
+      padding: 20px;
+    `;
+
+    const status = result.status || 'unknown';
+    const statusColors: Record<string, string> = {
+      completed: '#22c55e',
+      partially_completed: '#eab308',
+      failed: '#ef4444',
+      blocked_by_permission: '#f97316',
+      unsupported_environment: '#8b5cf6',
+      failed_after_replan: '#ef4444'
+    };
+    const statusColor = statusColors[status] || '#6b7280';
+    const statusLabels: Record<string, string> = {
+      completed: '修复完成',
+      partially_completed: '部分修复',
+      failed: '修复失败',
+      blocked_by_permission: '权限不足',
+      unsupported_environment: '环境不支持',
+      failed_after_replan: '重规划后失败'
+    };
+
+    const structuredOutput = result.structured_output || {};
+    const steps = structuredOutput.steps || result.traces || [];
+    const env = structuredOutput.environment || {};
+
+    const fixedItems = result.final?.fixedItems || [];
+    const unfixedItems = result.final?.unfixedItems || [];
+    const blockedItems = result.final?.blockedItems || [];
+
+    const stepsHtml = steps.map((step: any, index: number) => {
+      const stepStatus = step.status || 'pending';
+      const statusIcon = stepStatus === 'completed' ? '✓' : stepStatus === 'failed' ? '✗' : stepStatus === 'running' ? '⟳' : stepStatus === 'skipped' ? '⊘' : '○';
+      const statusColor = stepStatus === 'completed' ? '#22c55e' : stepStatus === 'failed' ? '#ef4444' : stepStatus === 'running' ? '#3b82f6' : stepStatus === 'skipped' ? '#9ca3af' : '#6b7280';
+      const duration = step.durationMs || step.duration_ms || 0;
+      const title = step.title || step.toolName || step.tool_name || `Step ${index + 1}`;
+      const error = step.error || step.error_type || '';
+
+      return `
+        <div style="
+          margin-bottom: 12px;
+          padding: 12px;
+          background: var(--bg-secondary);
+          border-radius: 8px;
+          border-left: 3px solid ${statusColor};
+        ">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="color: ${statusColor}; font-size: 16px;">${statusIcon}</span>
+              <span style="font-weight: 500; color: var(--text-primary);">${title}</span>
+            </div>
+            <span style="font-size: 12px; color: var(--text-secondary);">${duration}ms</span>
+          </div>
+          ${step.toolName || step.tool_name ? `<div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">工具: ${step.toolName || step.tool_name}</div>` : ''}
+          ${step.toolResultSummary || step.tool_result_summary ? `<div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; white-space: pre-wrap;">${this.escapeHtml((step.toolResultSummary || step.tool_result_summary || '').substring(0, 200))}</div>` : ''}
+          ${error ? `<div style="font-size: 12px; color: #ef4444; margin-top: 4px;">错误: ${this.escapeHtml(error.substring(0, 200))}</div>` : ''}
+          ${step.verificationPassed !== undefined ? `<div style="font-size: 12px; color: ${step.verificationPassed ? '#22c55e' : '#ef4444'}; margin-top: 4px;">验证: ${step.verificationPassed ? '通过' : '未通过'}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    const recommendationsHtml = (result.final?.recommendations || []).map((rec: string) =>
+      `<li style="margin-left: 20px; margin-bottom: 4px;">${this.escapeHtml(rec)}</li>`
+    ).join('');
+
+    modal.innerHTML = `
+      <div style="
+        background: var(--bg-primary);
+        border-radius: 12px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        max-width: 1000px;
+        width: 100%;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+      ">
+        <div style="
+          padding: 20px 24px;
+          border-bottom: 1px solid var(--border-color);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        ">
+          <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+            ${Robot({ theme: 'outline', size: '20', fill: 'var(--text-primary)' })}
+            <span>AI 自动修复结果</span>
+            <span style="
+              padding: 4px 12px;
+              border-radius: 12px;
+              font-size: 12px;
+              font-weight: 500;
+              background: ${statusColor}20;
+              color: ${statusColor};
+            ">${statusLabels[status] || status}</span>
+          </h3>
+          <button onclick="this.closest('div[style*=fixed]').remove()" style="
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+          ">×</button>
+        </div>
+
+        <div style="padding: 20px 24px; overflow-y: auto; flex: 1;">
+          ${env.osFamily ? `
+          <div style="
+            margin-bottom: 20px;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+          ">
+            <div><strong>OS:</strong> ${this.escapeHtml(env.osFamily)}</div>
+            <div><strong>发行版:</strong> ${this.escapeHtml(env.distribution || '未知')}</div>
+            <div><strong>版本:</strong> ${this.escapeHtml(env.version || '未知')}</div>
+            <div><strong>包管理器:</strong> ${this.escapeHtml(env.packageManager || '未知')}</div>
+            <div><strong>Init 系统:</strong> ${this.escapeHtml(env.initSystem || '未知')}</div>
+            <div><strong>sudo 可用:</strong> ${env.sudoAvailable ? '是' : '否'}</div>
+          </div>
+          ` : ''}
+
+          <div style="margin-bottom: 20px;">
+            <h4 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: var(--text-primary);">修复步骤执行详情</h4>
+            ${stepsHtml || '<div style="color: var(--text-secondary);">暂无步骤信息</div>'}
+          </div>
+
+          ${(fixedItems.length > 0 || unfixedItems.length > 0 || blockedItems.length > 0) ? `
+          <div style="margin-bottom: 20px;">
+            <h4 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: var(--text-primary);">修复结果汇总</h4>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+              <div style="padding: 12px; background: rgba(34, 197, 94, 0.1); border-radius: 8px;">
+                <div style="color: #22c55e; font-weight: 600; margin-bottom: 8px;">已修复 (${fixedItems.length})</div>
+                ${fixedItems.map((item: string) => `<div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">✓ ${this.escapeHtml(item)}</div>`).join('')}
+              </div>
+              <div style="padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px;">
+                <div style="color: #ef4444; font-weight: 600; margin-bottom: 8px;">未修复 (${unfixedItems.length})</div>
+                ${unfixedItems.map((item: string) => `<div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">✗ ${this.escapeHtml(item)}</div>`).join('')}
+              </div>
+              <div style="padding: 12px; background: rgba(249, 115, 22, 0.1); border-radius: 8px;">
+                <div style="color: #f97316; font-weight: 600; margin-bottom: 8px;">权限阻塞 (${blockedItems.length})</div>
+                ${blockedItems.map((item: string) => `<div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">⚠ ${this.escapeHtml(item)}</div>`).join('')}
+              </div>
+            </div>
+          </div>
+          ` : ''}
+
+          ${result.final?.summary ? `
+          <div style="margin-bottom: 20px;">
+            <h4 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: var(--text-primary);">总结</h4>
+            <div style="padding: 12px; background: var(--bg-secondary); border-radius: 8px; font-size: 13px; color: var(--text-primary); white-space: pre-wrap;">${this.escapeHtml(result.final.summary)}</div>
+          </div>
+          ` : ''}
+
+          ${recommendationsHtml ? `
+          <div>
+            <h4 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: var(--text-primary);">建议</h4>
+            <ul style="margin: 0; padding: 0; color: var(--text-secondary); font-size: 13px;">
+              ${recommendationsHtml}
+            </ul>
+          </div>
+          ` : ''}
+        </div>
+
+        <div style="
+          padding: 16px 24px;
+          border-top: 1px solid var(--border-color);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        ">
+          <div style="font-size: 12px; color: var(--text-secondary);">
+            总耗时: ${result.totalDurationMs || result.total_duration_ms || 0}ms
+          </div>
+          <button onclick="this.closest('div[style*=fixed]').remove()" style="
+            padding: 8px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 14px;
+            cursor: pointer;
+          ">关闭</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
     modal.addEventListener('click', (e) => {
       if (e.target === modal) modal.remove();
     });

@@ -468,7 +468,9 @@ def register_builtin_skills(registry) -> None:
 def get_default_skill_registry():
     """获取默认的 skill 注册表"""
     from .registry import SkillRegistry
+    from .auto_remediation import register_auto_remediation_skill
 
     registry = SkillRegistry()
     register_builtin_skills(registry)
+    register_auto_remediation_skill(registry)
     return registry

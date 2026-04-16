@@ -261,6 +261,7 @@ def get_default_registry() -> ToolRegistry:
         register_log_tools,
         register_file_tools,
         register_command_tools,
+        register_remediation_tools,
     )
 
     registry = ToolRegistry()
@@ -269,6 +270,7 @@ def get_default_registry() -> ToolRegistry:
     register_log_tools(registry)
     register_file_tools(registry)
     register_command_tools(registry)
+    register_remediation_tools(registry)
     return registry
 
 

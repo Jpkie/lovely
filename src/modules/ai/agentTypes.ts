@@ -232,3 +232,188 @@ export interface SkillSelection {
   skill: SkillDefinition;
   selected: boolean;
 }
+
+// ============================================================
+// Auto Remediation 相关类型
+// ============================================================
+
+export type RemediationStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'partially_completed'
+  | 'failed'
+  | 'blocked_by_permission'
+  | 'unsupported_environment'
+  | 'failed_after_replan';
+
+export type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'replanned';
+
+export interface RemediationFinding {
+  checkName: string;
+  title: string;
+  description: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  recommendation?: string;
+}
+
+export interface RemediationContext {
+  report: DetectionReport;
+  serverInfo: string;
+  findings: RemediationFinding[];
+  requireVerification: boolean;
+  autoRemediationMode: boolean;
+  maxReplanAttempts?: number;
+}
+
+export interface DetectionReport {
+  id: string;
+  server: string;
+  timestamp: number;
+  overallScore: number;
+  items: DetectionItem[];
+  summary: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
+}
+
+export interface DetectionItem {
+  id: string;
+  name: string;
+  category: 'security' | 'performance';
+  result?: {
+    score: number;
+    findings: Finding[];
+  };
+}
+
+export interface Finding {
+  title: string;
+  description: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  recommendation?: string;
+}
+
+export interface AutoRemediationTask {
+  task: string;
+  skills: string[];
+  context: Record<string, any>;
+  maxSteps: number;
+  requireVerification: boolean;
+  autoRemediationMode: boolean;
+}
+
+export interface AutoRemediationResult {
+  id: string;
+  requestId: string;
+  status: RemediationStatus;
+  skillName?: string;
+  plan?: {
+    id?: string;
+    steps: AutoRemediationPlanStep[];
+  };
+  traces: AutoRemediationTrace[];
+  final?: {
+    summary: string;
+    evidence: Array<{ tool: string; data: any }>;
+    risks: string[];
+    recommendations: string[];
+    commands: string[];
+    nextActions: string[];
+    fixedItems: string[];
+    unfixedItems: string[];
+    blockedItems: string[];
+  };
+  structuredOutput: {
+    status: string;
+    summary: {
+      totalSteps: number;
+      successfulSteps: number;
+      failedSteps: number;
+      replannedSteps: number;
+    };
+    environment?: {
+      osFamily: string;
+      distribution: string;
+      version: string;
+      packageManager: string;
+      initSystem: string;
+      sudoAvailable: boolean;
+    };
+    steps: AutoRemediationStepResult[];
+  };
+  totalDurationMs: number;
+  createdAt: string;
+}
+
+export interface AutoRemediationPlanStep {
+  id: string;
+  stepNumber: number;
+  title: string;
+  description: string;
+  toolName?: string;
+  parameters: Record<string, any>;
+  status: StepStatus;
+  reason?: string;
+  riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+  dependsOn?: string[];
+}
+
+export interface AutoRemediationTrace {
+  id: string;
+  stepId: string;
+  stepNumber: number;
+  toolName: string;
+  title?: string;
+  toolResultSummary?: string;
+  outputPreview?: string;
+  status: StepStatus;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs: number;
+  success: boolean;
+  error?: string;
+  verificationPassed?: boolean;
+  errorType?: FailureErrorType;
+}
+
+export interface AutoRemediationStepResult {
+  stepId: string;
+  stepNumber: number;
+  toolName: string;
+  title: string;
+  status: StepStatus;
+  durationMs: number;
+  error?: string;
+  errorType?: FailureErrorType;
+  verificationPassed?: boolean;
+  output?: any;
+  replanCount: number;
+}
+
+export type FailureErrorType =
+  | 'permission_denied'
+  | 'file_not_found'
+  | 'service_not_found'
+  | 'command_syntax_error'
+  | 'package_not_installed'
+  | 'unsupported_distribution'
+  | 'verification_failed'
+  | 'high_risk_blocked'
+  | 'timeout'
+  | 'ssh_not_connected'
+  | 'unknown';
+
+export interface EnvironmentInfo {
+  osFamily: string;
+  distribution: string;
+  version: string;
+  packageManager: string;
+  initSystem: string;
+  sudoAvailable: boolean;
+  currentUser: string;
+  rootRequired: boolean;
+}

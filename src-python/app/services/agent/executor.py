@@ -46,6 +46,7 @@ class ExecutionResult(BaseModel):
     total_duration_ms: int = 0
     final_summary: Optional[str] = None
     structured_output: Dict[str, Any] = Field(default_factory=dict)
+    replan_count: int = 0
 
 
 class Executor:
@@ -128,6 +129,7 @@ class Executor:
         plan: Plan,
         request: AgentRequest,
         context: Dict[str, Any],
+        max_replan_attempts: int = 0,
     ) -> ExecutionResult:
         result = ExecutionResult(
             plan_id=plan.id,
@@ -135,14 +137,74 @@ class Executor:
             status=ExecutionStatus.RUNNING,
         )
 
-        for step in plan.steps:
-            step_exec = await self.execute_step(step, context)
-            result.step_executions.append(step_exec)
+        replan_count = 0
+        current_plan_steps = list(plan.steps)
+        executed_step_ids = set()
+        error_classification: Dict[str, int] = {}
 
-            if step_exec.status == ExecutionStatus.FAILED:
-                if step_exec.error and "SSH not connected" in step_exec.error:
-                    result.status = ExecutionStatus.FAILED
-                    break
+        while True:
+            steps_to_execute = [
+                s for s in current_plan_steps if s.id not in executed_step_ids
+            ]
+
+            if not steps_to_execute:
+                break
+
+            for step in steps_to_execute:
+                step_exec = await self.execute_step(step, context)
+                result.step_executions.append(step_exec)
+                executed_step_ids.add(step.id)
+
+                if step_exec.status == ExecutionStatus.FAILED:
+                    if step_exec.error and "SSH not connected" in step_exec.error:
+                        result.status = ExecutionStatus.FAILED
+                        result.completed_at = datetime.utcnow()
+                        result.total_duration_ms = sum(
+                            s.duration_ms for s in result.step_executions
+                        )
+                        result.replan_count = replan_count
+                        return result
+
+                    if step_exec.result and step_exec.result.metadata:
+                        error_type = step_exec.result.metadata.get(
+                            "error_type", "unknown"
+                        )
+                        error_classification[error_type] = (
+                            error_classification.get(error_type, 0) + 1
+                        )
+
+                    if max_replan_attempts > 0 and replan_count < max_replan_attempts:
+                        should_replan = self._should_replan_step(
+                            step, step_exec, error_classification, context
+                        )
+
+                        if should_replan:
+                            replan_count += 1
+                            remaining_steps = [
+                                s
+                                for s in current_plan_steps
+                                if s.id not in executed_step_ids
+                            ]
+                            current_plan_steps = self._replan_steps(
+                                remaining_steps, step, step_exec, context
+                            )
+                            context["replan_context"] = {
+                                "original_step": step.id,
+                                "error": step_exec.error,
+                                "error_type": error_type
+                                if step_exec.result and step_exec.result.metadata
+                                else "unknown",
+                                "replan_count": replan_count,
+                            }
+                            break
+                        else:
+                            if error_type == "permission_denied":
+                                context["permission_blocked"] = True
+                            elif error_type == "unsupported_distribution":
+                                context["unsupported_environment"] = True
+
+            else:
+                break
 
         all_completed = all(
             s.status == ExecutionStatus.COMPLETED for s in result.step_executions
@@ -158,8 +220,87 @@ class Executor:
 
         result.completed_at = datetime.utcnow()
         result.total_duration_ms = sum(s.duration_ms for s in result.step_executions)
+        result.replan_count = replan_count
 
         return result
+
+    def _should_replan_step(
+        self,
+        step: PlanStep,
+        step_exec: StepExecution,
+        error_classification: Dict[str, int],
+        context: Dict[str, Any],
+    ) -> bool:
+        """判断是否应该对当前失败的步骤进行重规划"""
+        if not step_exec.result or not step_exec.result.metadata:
+            return False
+
+        error_type = step_exec.result.metadata.get("error_type", "unknown")
+
+        non_replanable_errors = {
+            "permission_denied",
+            "unsupported_distribution",
+            "high_risk_blocked",
+            "ssh_not_connected",
+        }
+
+        if error_type in non_replanable_errors:
+            return False
+
+        if error_classification.get(error_type, 0) >= 2:
+            return False
+
+        return True
+
+    def _replan_steps(
+        self,
+        remaining_steps: List[PlanStep],
+        failed_step: PlanStep,
+        step_exec: StepExecution,
+        context: Dict[str, Any],
+    ) -> List[PlanStep]:
+        """根据失败步骤重新规划剩余步骤"""
+        error_type = (
+            step_exec.result.metadata.get("error_type", "unknown")
+            if step_exec.result and step_exec.result.metadata
+            else "unknown"
+        )
+
+        if error_type == "file_not_found":
+            new_steps = []
+            for s in remaining_steps:
+                if s.tool_name == failed_step.tool_name:
+                    new_step = PlanStep(
+                        id=f"{s.id}_replan_{uuid.uuid4().hex[:8]}",
+                        step_number=s.step_number,
+                        description=f"{s.description} (重规划)",
+                        skill_id=s.skill_id,
+                        tool_name="echo",
+                        parameters={
+                            "message": f"Skipped {s.tool_name} due to file not found"
+                        },
+                        status="skipped",
+                    )
+                    new_steps.append(new_step)
+                else:
+                    new_steps.append(s)
+            return new_steps
+
+        if error_type == "verification_failed":
+            verify_step = next(
+                (
+                    s
+                    for s in remaining_steps
+                    if "verify" in s.tool_name
+                    and s.step_number > failed_step.step_number
+                ),
+                None,
+            )
+            if verify_step:
+                new_steps = [s for s in remaining_steps if s.id != verify_step.id]
+                return new_steps
+
+        return remaining_steps
 
     def generate_summary(
         self,

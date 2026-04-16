@@ -9,12 +9,19 @@
   1. _parse_skills: 解析任务匹配的 skills
   2. _build_context: 构建 SSH 执行上下文
   3. planner.plan(): 生成执行计划
-  4. executor.execute_plan(): 按计划执行工具链
+  4. executor.execute_plan(): 按计划执行工具链（支持失败重规划）
   5. 组装 FinalReport: plan / traces / final / raw_summary
 
 tool_registry 注入:
   - /agent/run 传入 runtime_registry（合并了 internal + MCP）
   - 如果未传入，默认使用 get_default_registry()
+
+自动修复增强:
+  - 支持 auto_remediation skill 的环境识别
+  - 支持失败重规划（有限次，最多 max_replan_attempts）
+  - 支持失败分类（permission_denied, file_not_found 等）
+  - 支持修复验证
+  - 支持生成结构化修复报告（fixed/unfixed/blocked items）
 """
 
 from datetime import datetime
@@ -31,7 +38,7 @@ from .schemas import (
 )
 from .skills import get_default_skill_registry, SkillRegistry
 from .planner import BasePlanner, PlannerConfig, create_planner
-from .executor import Executor, ExecutionResult, ExecutionStatus
+from .executor import Executor, ExecutionResult, ExecutionStatus, StepExecution
 from .tool_registry import ToolRegistry, get_default_registry
 from .context_builder import (
     HostSummaryBuilder,
@@ -79,6 +86,13 @@ class FinalReport(BaseModel):
     structured_output: Dict[str, Any] = Field(default_factory=dict)
     total_duration_ms: int = 0
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    environment: Optional[Dict[str, Any]] = None
+    fixed_items: List[str] = Field(default_factory=list)
+    unfixed_items: List[str] = Field(default_factory=list)
+    blocked_items: List[str] = Field(default_factory=list)
+    replan_count: int = 0
+    final_status: Optional[str] = None
 
 
 class AgentOrchestrator:
@@ -265,6 +279,12 @@ class AgentOrchestrator:
         report.skill_name = skill_name
         context = self._build_context(request)
 
+        is_auto_remediation = skill_name == "auto_remediation"
+        max_replan_attempts = (
+            context.get("max_replan_attempts", 2) if is_auto_remediation else 0
+        )
+        replan_count = 0
+
         plan = await self.planner.plan(request, skills, context)
 
         plan_dict = None
@@ -288,7 +308,10 @@ class AgentOrchestrator:
             }
         report.plan = plan_dict
 
-        execution_result = await self.executor.execute_plan(plan, request, context)
+        execution_result = await self.executor.execute_plan(
+            plan, request, context, max_replan_attempts=max_replan_attempts
+        )
+        replan_count = getattr(execution_result, "replan_count", 0)
 
         skill_results = []
         for skill in skills:
@@ -324,11 +347,15 @@ class AgentOrchestrator:
         report.skill_results = skill_results
         report.structured_output = execution_result.structured_output
         report.total_duration_ms = execution_result.total_duration_ms
+        report.replan_count = replan_count
 
         traces = []
         for step_exec in execution_result.step_executions:
             output_preview = None
             tool_result_summary = None
+            verification_passed = None
+            error_type = None
+
             if step_exec.result and step_exec.result.output:
                 output_str = str(step_exec.result.output)
                 output_preview = (
@@ -337,6 +364,12 @@ class AgentOrchestrator:
                 tool_result_summary = (
                     output_str[:500] if len(output_str) > 500 else output_str
                 )
+
+            if step_exec.result and step_exec.result.metadata:
+                verification_passed = step_exec.result.metadata.get(
+                    "verification_passed"
+                )
+                error_type = step_exec.result.metadata.get("error_type")
 
             trace_entry = {
                 "id": str(uuid.uuid4()),
@@ -358,6 +391,8 @@ class AgentOrchestrator:
                 "duration_ms": step_exec.duration_ms,
                 "success": step_exec.status == ExecutionStatus.COMPLETED,
                 "error": step_exec.error,
+                "verification_passed": verification_passed,
+                "error_type": error_type,
             }
             traces.append(trace_entry)
         report.traces = traces
@@ -366,6 +401,10 @@ class AgentOrchestrator:
         all_risks = []
         all_commands = []
         all_evidence = []
+        fixed_items = []
+        unfixed_items = []
+        blocked_items = []
+
         for sr in skill_results:
             all_recommendations.extend(sr.recommendations)
             if sr.risk_level == "high":
@@ -374,6 +413,69 @@ class AgentOrchestrator:
                 all_risks.append(f"中风险: {sr.skill_name}")
             for finding in sr.findings:
                 all_evidence.append(finding)
+
+        if is_auto_remediation:
+            categorized_findings = context.get("categorized_findings", {})
+            findings = context.get("all_findings", [])
+
+            successful_tools = {
+                s.tool_name
+                for s in execution_result.step_executions
+                if s.status == ExecutionStatus.COMPLETED
+            }
+            failed_tools = {
+                s.tool_name
+                for s in execution_result.step_executions
+                if s.status == ExecutionStatus.FAILED
+            }
+
+            for finding in findings:
+                title = finding.get("title", "")
+                severity = finding.get("severity", "")
+
+                if any(
+                    f"patch_{cat}" in successful_tools
+                    for cat in ["pam", "ssh", "fw", "user"]
+                ):
+                    fixed_items.append(f"[{severity}] {title}")
+                elif any(
+                    f"patch_{cat}" in failed_tools
+                    for cat in ["pam", "ssh", "fw", "user"]
+                ):
+                    failed_step = next(
+                        (
+                            s
+                            for s in execution_result.step_executions
+                            if s.tool_name.startswith("patch_")
+                            and s.status == ExecutionStatus.FAILED
+                        ),
+                        None,
+                    )
+                    if (
+                        failed_step
+                        and failed_step.result
+                        and failed_step.result.metadata.get("error_type")
+                        == "permission_denied"
+                    ):
+                        blocked_items.append(f"[{severity}] {title} (权限不足)")
+                    else:
+                        unfixed_items.append(f"[{severity}] {title}")
+
+            env_info = context.get("env_info")
+            if env_info:
+                report.environment = {
+                    "os_family": env_info.os_family,
+                    "distribution": env_info.distribution,
+                    "version": env_info.version,
+                    "package_manager": env_info.package_manager,
+                    "init_system": env_info.init_system,
+                    "sudo_available": env_info.sudo_available,
+                    "current_user": env_info.current_user,
+                }
+
+        report.fixed_items = fixed_items
+        report.unfixed_items = unfixed_items
+        report.blocked_items = blocked_items
 
         report.final = {
             "summary": self.executor.generate_summary(execution_result, {}),
@@ -385,11 +487,21 @@ class AgentOrchestrator:
                 "持续监控系统状态",
                 "定期执行安全审计",
             ],
+            "fixed_items": fixed_items,
+            "unfixed_items": unfixed_items,
+            "blocked_items": blocked_items,
         }
 
         report.raw_summary = self._generate_final_summary(
             request, execution_result, skill_results
         )
+
+        failed_step_count = sum(
+            1
+            for s in execution_result.step_executions
+            if s.status == ExecutionStatus.FAILED
+        )
+        total_step_count = len(execution_result.step_executions)
 
         report.structured_output = {
             "execution_id": execution_result.id,
@@ -397,19 +509,17 @@ class AgentOrchestrator:
             "request_id": request.id,
             "status": execution_result.status.value,
             "summary": {
-                "total_steps": len(execution_result.step_executions),
+                "total_steps": total_step_count,
                 "successful_steps": sum(
                     1
                     for s in execution_result.step_executions
                     if s.status == ExecutionStatus.COMPLETED
                 ),
-                "failed_steps": sum(
-                    1
-                    for s in execution_result.step_executions
-                    if s.status == ExecutionStatus.FAILED
-                ),
+                "failed_steps": failed_step_count,
+                "replanned_steps": replan_count,
                 "total_duration_ms": execution_result.total_duration_ms,
             },
+            "environment": report.environment,
             "skill_results": [
                 {
                     "skill_name": sr.skill_name,
@@ -421,21 +531,55 @@ class AgentOrchestrator:
             ],
             "steps": [
                 {
+                    "step_id": s.id,
+                    "step_number": s.step_number,
                     "tool_name": s.tool_name,
+                    "title": s.description,
                     "status": s.status.value,
                     "duration_ms": s.duration_ms,
                     "error": s.error,
+                    "error_type": s.result.metadata.get("error_type")
+                    if s.result and s.result.metadata
+                    else None,
+                    "verification_passed": s.result.metadata.get("verification_passed")
+                    if s.result and s.result.metadata
+                    else None,
+                    "replan_count": 0,
                 }
                 for s in execution_result.step_executions
             ],
         }
 
         if execution_result.status == ExecutionStatus.COMPLETED:
-            report.status = "completed"
+            if failed_step_count > 0 and total_step_count > 0:
+                if failed_step_count == total_step_count:
+                    report.status = "failed"
+                    report.final_status = "failed"
+                else:
+                    report.status = "partially_completed"
+                    report.final_status = "partially_completed"
+            else:
+                report.status = "completed"
+                report.final_status = "completed"
         elif execution_result.status == ExecutionStatus.FAILED:
-            report.status = "failed"
+            if replan_count >= max_replan_attempts and max_replan_attempts > 0:
+                report.status = "failed_after_replan"
+                report.final_status = "failed_after_replan"
+            else:
+                report.status = "failed"
+                report.final_status = "failed"
         else:
             report.status = execution_result.status.value
+            report.final_status = execution_result.status.value
+
+        if (
+            is_auto_remediation
+            and env_info
+            and not env_info.sudo_available
+            and not env_info.current_user == "root"
+        ):
+            report.status = "blocked_by_permission"
+            report.final_status = "blocked_by_permission"
 
         return report
 

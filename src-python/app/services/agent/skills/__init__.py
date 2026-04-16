@@ -11,6 +11,11 @@ from .builtin_skills import (
     register_builtin_skills,
     get_default_skill_registry,
 )
+from .auto_remediation import (
+    AutoRemediationSkill,
+    register_auto_remediation_skill,
+    get_auto_remediation_skill,
+)
 
 __all__ = [
     "BaseSkill",
@@ -23,6 +28,9 @@ __all__ = [
     "PortHuntSkill",
     "SSHAuditSkill",
     "FixAdvisorSkill",
+    "AutoRemediationSkill",
     "register_builtin_skills",
+    "register_auto_remediation_skill",
     "get_default_skill_registry",
+    "get_auto_remediation_skill",
 ]

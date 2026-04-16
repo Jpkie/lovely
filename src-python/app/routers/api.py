@@ -1364,6 +1364,7 @@ async def agent_run(req: AgentRunRequest):
         "request_id": report.request_id,
         "task": report.task,
         "status": report.status,
+        "final_status": report.final_status,
         "skill_name": report.skill_name,
         "plan": report.plan,
         "traces": report.traces,
@@ -1382,6 +1383,11 @@ async def agent_run(req: AgentRunRequest):
         "structured_output": report.structured_output,
         "total_duration_ms": report.total_duration_ms,
         "created_at": report.created_at.isoformat(),
+        "environment": report.environment,
+        "fixed_items": report.fixed_items,
+        "unfixed_items": report.unfixed_items,
+        "blocked_items": report.blocked_items,
+        "replan_count": report.replan_count,
     }
 
 

@@ -306,31 +306,23 @@ class AgentOrchestrator:
         """组装最终报告（execution_result 由调用方传入，此处只做聚合和格式化）"""
 
         # ── 4a: 按 Skill 分组结构化结果 ──
+        # 关键修复：每个 StructuredResult 只基于该 skill 的步骤，不再全局统计
         skill_results: List[StructuredResult] = []
 
+        # 按 skill_id 将 step_executions 分组
+        skill_step_map = self._group_steps_by_skill(execution_result.step_executions)
+
         for skill in skills:
-            related_executions = [
-                s
-                for s in execution_result.step_executions
-                if s.tool_name.startswith("detect_")
-                or s.tool_name
-                in [
-                    "hostname",
-                    "uptime",
-                    "uname",
-                    "memory_info",
-                    "disk_info",
-                    "network_info",
-                ]
-            ]
+            # 只取属于该 skill 的步骤
+            skill_steps = skill_step_map.get(skill.name, [])
 
             structured_result = StructuredResult(
                 skill_name=skill.name,
                 summary=self.executor.generate_summary(execution_result, {}),
-                findings=self._extract_findings_from_execution(execution_result, skill.name),
-                recommendations=self._extract_recommendations_from_results(execution_result),
-                risk_level=self._determine_risk_level(execution_result),
-                metadata={"skill": skill.name},
+                findings=self._extract_findings_from_steps(skill_steps),
+                recommendations=self._extract_recommendations_from_steps(skill_steps),
+                risk_level=self._determine_risk_level_from_steps(skill_steps),
+                metadata={"skill": skill.name, "step_count": len(skill_steps)},
             )
             skill_results.append(structured_result)
 
@@ -504,12 +496,45 @@ class AgentOrchestrator:
         execution_result: ExecutionResult,
         skill_name: str,
     ) -> List[Dict[str, Any]]:
-        """从执行结果中提取结构化发现项"""
+        """从执行结果中提取结构化发现项（兼容旧接口，内部委托到新方法）"""
+        skill_steps = [
+            s for s in execution_result.step_executions
+            if getattr(s, "skill_id", None) == skill_name
+        ]
+        return self._extract_findings_from_steps(skill_steps)
+
+    def _extract_recommendations_from_results(
+        self, execution_result: ExecutionResult,
+    ) -> List[str]:
+        """根据工具执行结果的 risk_level 生成建议（兼容旧接口，对全量步骤计算）"""
+        return self._extract_recommendations_from_steps(execution_result.step_executions)
+
+    def _determine_risk_level(self, execution_result: ExecutionResult) -> str:
+        """综合所有步骤的最高风险等级（兼容旧接口）"""
+        return self._determine_risk_level_from_steps(execution_result.step_executions)
+
+    # ── 按 skill 归组的新版方法 ──
+
+    @staticmethod
+    def _group_steps_by_skill(step_executions: List[StepExecution]) -> Dict[str, List[StepExecution]]:
+        """将 step_executions 按 skill_id 分组
+
+        Returns:
+            {skill_name: [StepExecution, ...]}  — 无 skill_id 的步骤归入 "__unknown__"
+        """
+        groups: Dict[str, List[StepExecution]] = {}
+        for se in step_executions:
+            key = getattr(se, "skill_id", None) or "__unknown__"
+            groups.setdefault(key, []).append(se)
+        return groups
+
+    @staticmethod
+    def _extract_findings_from_steps(steps: List[StepExecution]) -> List[Dict[str, Any]]:
+        """从指定的步骤集合中提取结构化发现项"""
         findings: List[Dict[str, Any]] = []
-        for step_exec in execution_result.step_executions:
+        for step_exec in steps:
             if not (step_exec.result and step_exec.result.output):
                 continue
-
             output = step_exec.result.output
             if isinstance(output, dict):
                 findings.append({"tool": step_exec.tool_name, "data": output})
@@ -519,12 +544,11 @@ class AgentOrchestrator:
                         findings.append({"tool": step_exec.tool_name, "data": item})
         return findings
 
-    def _extract_recommendations_from_results(
-        self, execution_result: ExecutionResult,
-    ) -> List[str]:
-        """根据工具执行结果的 risk_level 生成建议"""
+    @staticmethod
+    def _extract_recommendations_from_steps(steps: List[StepExecution]) -> List[str]:
+        """根据指定步骤集合的 risk_level 生成建议"""
         recs: List[str] = []
-        for step_exec in execution_result.step_executions:
+        for step_exec in steps:
             if not (step_exec.result and step_exec.result.metadata):
                 continue
             rl = step_exec.result.metadata.get("risk_level", "")
@@ -537,10 +561,11 @@ class AgentOrchestrator:
             recs.append("未发现高风险问题，建议保持当前安全配置")
         return recs
 
-    def _determine_risk_level(self, execution_result: ExecutionResult) -> str:
-        """综合所有步骤的最高风险等级"""
+    @staticmethod
+    def _determine_risk_level_from_steps(steps: List[StepExecution]) -> str:
+        """根据指定步骤集合判定最高风险等级"""
         high = medium = 0
-        for se in execution_result.step_executions:
+        for se in steps:
             if se.result and se.result.metadata:
                 r = se.result.metadata.get("risk_level", "low")
                 if r == "high":

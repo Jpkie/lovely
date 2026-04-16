@@ -221,3 +221,16 @@ class SkillRegistry:
             ):
                 matched.append(skill.get_definition())
         return matched
+
+    def iter_skills(self):
+        """公开实例遍历方法 — 返回已注册 Skill 实例的迭代器
+
+        用法:
+            for skill_instance in registry.iter_skills():
+                ...
+        """
+        return iter(self._skills.values())
+
+    def get_all_skill_instances(self) -> List[BaseSkill]:
+        """获取所有已注册 Skill 实例列表（只读快照）"""
+        return list(self._skills.values())

@@ -24,6 +24,7 @@ class StepExecution(BaseModel):
     step_id: str
     step_number: int
     tool_name: str
+    skill_id: Optional[str] = None  # 所属 Skill（从 PlanStep.skill_id 传入）
     parameters: Dict[str, Any] = Field(default_factory=dict)
     status: ExecutionStatus = ExecutionStatus.PENDING
     result: Optional[AgentToolResult] = None
@@ -64,6 +65,7 @@ class Executor:
             step_id=step.id,
             step_number=step.step_number,
             tool_name=step.tool_name,
+            skill_id=step.skill_id,  # 从 PlanStep 传入，用于按 Skill 归组结果
             parameters=step.parameters,
             status=ExecutionStatus.RUNNING,
             started_at=datetime.utcnow(),

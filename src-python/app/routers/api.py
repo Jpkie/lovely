@@ -1490,9 +1490,8 @@ async def agent_get_tools():
 async def agent_get_skills():
     """获取可用 Skills 列表"""
     registry = get_default_skill_registry()
-    skill_instances = registry._skills.values()
     skills = []
-    for s in skill_instances:
+    for s in registry.iter_skills():
         default_steps = s.build_steps({}, {})
         skills.append({
             "id": s.name,

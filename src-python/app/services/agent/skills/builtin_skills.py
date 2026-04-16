@@ -24,21 +24,21 @@ class LogInvestigationSkill(BaseSkill):
     def category(self) -> str:
         return "investigation"
 
-    # ── 参数定义（按要求更新） ──
+    # ── 参数定义 ──
     @property
     def parameters(self) -> List[SkillParameter]:
         return [
             SkillParameter(
                 name="source",
                 type="string",
-                description="日志来源：system（系统默认日志）、application（应用日志）、custom（自定义路径）",
+                description="日志来源: system(读取 auth.log+syslog) / journal(仅 journalctl) / custom(仅指定 log_path)",
                 required=False,
                 default="system",
             ),
             SkillParameter(
                 name="log_path",
                 type="string",
-                description="要调查的日志文件路径，支持 /var/log/auth.log、/var/log/syslog 等常见路径",
+                description="自定义日志文件路径（source=custom 时生效）",
                 required=False,
                 default="/var/log/auth.log",
             ),
@@ -60,17 +60,22 @@ class LogInvestigationSkill(BaseSkill):
 
     @property
     def steps(self) -> List[SkillStep]:
-        """默认固定步骤（无参时使用）"""
+        """默认固定步骤（无参时使用，等同于 source=system）"""
         return [
             SkillStep(id="li_1", name="获取日志文件列表", description="列出可用日志文件", tool_name="list_log_files", parameters={}),
             SkillStep(id="li_2", name="读取认证日志", description="读取系统认证日志", tool_name="read_system_log", parameters={"log_path": "/var/log/auth.log"}),
             SkillStep(id="li_3", name="读取系统日志", description="读取系统主日志", tool_name="read_system_log", parameters={"log_path": "/var/log/syslog"}),
             SkillStep(id="li_4", name="日志分析检测", description="执行日志分析检测", tool_name="detect_log", parameters={}),
-            SkillStep(id="li_5", name="读取 journal 日志", description="读取 systemd journal", tool_name="read_journalctl_log", parameters={"page_size": 50}),
         ]
 
     def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
-        """根据 args 动态构建日志调查步骤"""
+        """根据 args 动态构建日志调查步骤
+
+        source 分支逻辑:
+          - system:  读 auth.log + syslog + 日志分析检测
+          - journal: 仅读 journalctl + 日志分析检测
+          - custom:  仅读指定 log_path + 日志分析检测
+        """
         source = args.get("source", "system")
         log_path = args.get("log_path", "/var/log/auth.log")
         page_size = args.get("page_size", 100)
@@ -80,9 +85,17 @@ class LogInvestigationSkill(BaseSkill):
             SkillStep(id="li_1", name="获取日志文件列表", description="列出可用日志文件", tool_name="list_log_files", parameters={}),
         ]
 
-        # 根据来源动态生成读取步骤
-        if source == "custom":
-            # 自定义路径只读取指定日志
+        # ── 按 source 分支：每种来源只生成对应的读取步骤 ──
+        if source == "journal":
+            # journal 模式：仅读 journalctl，不读 auth.log / syslog
+            dynamic_steps.append(SkillStep(
+                id="li_2", name="读取 journal 日志",
+                description="读取 systemd journal",
+                tool_name="read_journalctl_log",
+                parameters={"page_size": min(page_size, 200)},
+            ))
+        elif source == "custom":
+            # 自定义模式：仅读取指定路径的日志
             dynamic_steps.append(SkillStep(
                 id="li_2", name=f"读取自定义日志 ({log_path})",
                 description=f"读取指定日志文件: {log_path}",
@@ -90,7 +103,7 @@ class LogInvestigationSkill(BaseSkill):
                 parameters={"log_path": log_path, "page_size": page_size},
             ))
         else:
-            # 系统默认读取认证和系统日志
+            # system 模式（默认）：读 auth.log + syslog
             dynamic_steps.append(SkillStep(
                 id="li_2", name="读取认证日志",
                 description="读取系统认证日志 /var/log/auth.log",
@@ -104,8 +117,8 @@ class LogInvestigationSkill(BaseSkill):
                 parameters={"log_path": "/var/log/syslog", "page_size": page_size},
             ))
 
-        # 如果指定了关键词搜索
-        detect_params = {}
+        # 日志分析检测（所有来源都需要）
+        detect_params: Dict[str, Any] = {}
         if keywords:
             detect_params["keywords"] = keywords
         dynamic_steps.append(SkillStep(
@@ -113,14 +126,6 @@ class LogInvestigationSkill(BaseSkill):
             description="执行日志分析检测（含关键词过滤）",
             tool_name="detect_log",
             parameters=detect_params,
-        ))
-
-        # 补充 journalctl
-        dynamic_steps.append(SkillStep(
-            id="li_5", name="读取 journal 日志",
-            description="读取 systemd journal",
-            tool_name="read_journalctl_log",
-            parameters={"page_size": min(page_size, 200)},
         ))
 
         return dynamic_steps

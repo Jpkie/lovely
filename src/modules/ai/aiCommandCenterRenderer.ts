@@ -695,6 +695,27 @@ export class AICommandCenterRenderer {
         <div class="ai-header-title">
           <span style="font-size: 24px;">🎯</span>
           <h1>AI 指挥台</h1>
+          <button
+            class="ai-switch-mode-btn"
+            onclick="window.app.stateManager.setCurrentPage('dashboard'); window.app.render()"
+            title="切换到工具箱模式"
+            style="
+              margin-left: auto;
+              padding: 6px 14px;
+              background: rgba(255,255,255,0.2);
+              border: 1px solid rgba(255,255,255,0.3);
+              border-radius: 6px;
+              color: white;
+              font-size: 12px;
+              font-weight: 500;
+              cursor: pointer;
+              backdrop-filter: blur(6px);
+              transition: all 0.2s;
+              white-space: nowrap;
+            "
+            onmouseover="this.style.background='rgba(255,255,255,0.3)'"
+            onmouseout="this.style.background='rgba(255,255,255,0.2)'"
+          >🔧 工具箱版</button>
         </div>
         <div class="ai-header-subtitle">
           一句话下达任务，AI 帮你分析主机并执行检测

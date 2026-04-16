@@ -378,7 +378,7 @@ export class ModernUIRenderer {
    * 判断当前页面是否应隐藏左侧导航栏
    */
   public shouldHideSidebar(): boolean {
-    return this.state.currentPage === 'ai-command-center';
+    return !this.state.isConnected || this.state.currentPage === 'ai-command-center';
   }
 
   /**

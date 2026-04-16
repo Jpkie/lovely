@@ -495,6 +495,8 @@ export class SettingsPageManager {
    * 执行AI连接测试
    */
   private async performAITest(provider: string, apiKey: string, model: string, baseUrl: string): Promise<string> {
+    const previousConfig = aiService.getConfig();
+
     try {
       // 临时保存配置到 AI 服务进行测试
       // 将提供商key映射到有效的AIProvider类型
@@ -506,16 +508,15 @@ export class SettingsPageManager {
         model: model || undefined,
       });
 
-      // 执行简单的AI测试
-      const result = await aiService.generateSolution(
-        '测试连接',
-        '这是一个连接测试，请简短回复"连接成功"',
-        'low'
-      );
-
-      return result.solution.substring(0, 100) + '...'; // 返回前100字符
+      return await aiService.testConnection();
     } catch (error: any) {
       throw new Error(error.message || 'AI API 连接失败');
+    } finally {
+      if (previousConfig) {
+        aiService.saveConfig(previousConfig);
+      } else {
+        aiService.clearConfig();
+      }
     }
   }
 

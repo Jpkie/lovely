@@ -27,6 +27,10 @@ export interface AIChatMessage {
   content: string;
 }
 
+const LOCAL_AI_PROXY_URL = import.meta.env.DEV
+  ? '/api/v1/ai/chat-proxy'
+  : 'http://127.0.0.1:3001/api/v1/ai/chat-proxy';
+
 /**
  * AI 服务类
  */
@@ -179,17 +183,28 @@ export class AIService {
     return { url, headers, model };
   }
 
-  private async requestViaLocalProxy(url: string, headers: Record<string, string>, body: Record<string, any>): Promise<any> {
+  private async requestViaLocalProxy(
+    url: string,
+    headers: Record<string, string>,
+    body: Record<string, any>,
+    timeoutSeconds = 90
+  ): Promise<any> {
     const callProxy = async (targetUrl: string): Promise<any> => {
-      const resp = await fetch('/api/v1/ai/chat-proxy', {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), timeoutSeconds * 1000);
+
+      const resp = await fetch(LOCAL_AI_PROXY_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           url: targetUrl,
           headers,
           body,
-          timeout_seconds: 90,
+          timeout_seconds: timeoutSeconds,
         }),
+      }).finally(() => {
+        window.clearTimeout(timeoutId);
       });
 
       const data = await resp.json().catch(() => ({}));
@@ -203,6 +218,10 @@ export class AIService {
     try {
       return await callProxy(url);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error(`AI 请求超时（${timeoutSeconds} 秒）`);
+      }
+
       const msg = error instanceof Error ? error.message : String(error);
       // 保持用户原始 URL 不变；仅在 404 时做兼容重试
       if (!msg.includes('404')) throw error;
@@ -571,17 +590,49 @@ ${context ? `\n上下文信息：${context}` : ''}`;
   /**
    * 测试 API 连接
    */
-  public async testConnection(): Promise<boolean> {
+  public async testConnection(): Promise<string> {
+    if (!this.isConfigured()) {
+      throw new Error('请先配置 AI 服务（设置 -> AI 配置）');
+    }
+
     try {
-      await this.generateSolution(
-        '测试问题',
-        '这是一个测试',
-        'low'
+      const { url, headers, model } = this.getAPIEndpoint();
+      const responseData = await this.requestViaLocalProxy(
+        url,
+        headers,
+        this.config!.provider === 'claude'
+          ? {
+              model,
+              max_tokens: 64,
+              messages: [
+                {
+                  role: 'user',
+                  content: '请只回复“连接成功”。',
+                },
+              ],
+            }
+          : {
+              model,
+              messages: [
+                {
+                  role: 'system',
+                  content: '你是一个连接测试助手。',
+                },
+                {
+                  role: 'user',
+                  content: '请只回复“连接成功”。',
+                },
+              ],
+              temperature: 0,
+              max_tokens: 64,
+            },
+        20
       );
-      return true;
+      const content = this.extractTextFromResponse(responseData).trim();
+      return content || '连接成功';
     } catch (error) {
       console.error('AI API 连接测试失败:', error);
-      return false;
+      throw error;
     }
   }
 }

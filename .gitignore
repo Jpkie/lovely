@@ -46,3 +46,20 @@ secrets/
 **/*password*
 **/*secret*
 **/*token*
+
+# Python virtualenv and cache artifacts
+.venv/
+**/.venv/
+venv/
+**/venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.pytest_cache/
+**/.pytest_cache/
+*.local-backup/
+**/*.local-backup/
+*.cherry-backup/
+**/*.cherry-backup/

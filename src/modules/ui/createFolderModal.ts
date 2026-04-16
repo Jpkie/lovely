@@ -1,13 +1,10 @@
-﻿/**
- * 鏂板缓鏂囦欢澶规ā鎬佸璇濇
- */
-
 import { invoke } from '../../shims/@tauri-apps/api/core';
 
 export class CreateFolderModal {
   private modal: HTMLElement | null = null;
-  private isVisible: boolean = false;
-  private currentParentDir: string = '';
+  private isVisible = false;
+  private currentParentDir = '';
+  private boundKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
   constructor() {
     this.createModal();
@@ -15,15 +12,13 @@ export class CreateFolderModal {
   }
 
   private createModal(): void {
-    // 鍒涘缓妯℃€佸鍣?    this.modal = document.createElement('div');
+    this.modal = document.createElement('div');
     this.modal.id = 'create-folder-modal';
+    this.modal.style.display = 'none';
     this.modal.innerHTML = `
       <div class="modal-overlay" style="
         position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
+        inset: 0;
         background: rgba(0, 0, 0, 0.5);
         display: flex;
         justify-content: center;
@@ -38,7 +33,6 @@ export class CreateFolderModal {
           max-width: 90vw;
           box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
         ">
-          <!-- 鏍囬鏍?-->
           <div style="
             padding: var(--spacing-md);
             border-bottom: 1px solid var(--border-color);
@@ -51,8 +45,8 @@ export class CreateFolderModal {
               color: var(--text-primary);
               font-size: 16px;
               font-weight: 600;
-            ">鏂板缓鏂囦欢澶?/h3>
-            <button id="create-folder-modal-close" style="
+            ">新建文件夹</h3>
+            <button id="create-folder-modal-close" type="button" style="
               background: none;
               border: none;
               color: var(--text-secondary);
@@ -61,12 +55,11 @@ export class CreateFolderModal {
               padding: 4px;
               border-radius: var(--border-radius-sm);
             " onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background='none'">
-              鉁?            </button>
+              ×
+            </button>
           </div>
 
-          <!-- 鍐呭鍖哄煙 -->
           <div style="padding: var(--spacing-md);">
-            <!-- 鐖剁洰褰曟樉绀?-->
             <div style="margin-bottom: var(--spacing-md);">
               <label style="
                 display: block;
@@ -74,7 +67,7 @@ export class CreateFolderModal {
                 color: var(--text-secondary);
                 font-size: 12px;
                 font-weight: 500;
-              ">鍒涘缓浣嶇疆</label>
+              ">创建位置</label>
               <div id="create-folder-parent-dir" style="
                 padding: var(--spacing-sm);
                 background: var(--bg-secondary);
@@ -87,7 +80,6 @@ export class CreateFolderModal {
               "></div>
             </div>
 
-            <!-- 鏂囦欢澶瑰悕绉拌緭鍏?-->
             <div style="margin-bottom: var(--spacing-md);">
               <label for="create-folder-name" style="
                 display: block;
@@ -95,11 +87,11 @@ export class CreateFolderModal {
                 color: var(--text-secondary);
                 font-size: 12px;
                 font-weight: 500;
-              ">鏂囦欢澶瑰悕绉?/label>
+              ">文件夹名称</label>
               <input
                 type="text"
                 id="create-folder-name"
-                placeholder="璇疯緭鍏ユ枃浠跺す鍚嶇О"
+                placeholder="请输入文件夹名称"
                 style="
                   width: 100%;
                   padding: var(--spacing-sm);
@@ -119,7 +111,6 @@ export class CreateFolderModal {
               "></div>
             </div>
 
-            <!-- 瀹屾暣璺緞棰勮 -->
             <div style="margin-bottom: var(--spacing-lg);">
               <label style="
                 display: block;
@@ -127,7 +118,7 @@ export class CreateFolderModal {
                 color: var(--text-secondary);
                 font-size: 12px;
                 font-weight: 500;
-              ">瀹屾暣璺緞</label>
+              ">完整路径</label>
               <div id="create-folder-full-path" style="
                 padding: var(--spacing-sm);
                 background: var(--bg-tertiary);
@@ -141,19 +132,18 @@ export class CreateFolderModal {
               "></div>
             </div>
 
-            <!-- 鎿嶄綔鎸夐挳 -->
             <div style="
               display: flex;
               gap: var(--spacing-sm);
               justify-content: flex-end;
             ">
-              <button id="create-folder-cancel-btn" class="modern-btn secondary" style="
+              <button id="create-folder-cancel-btn" type="button" class="modern-btn secondary" style="
                 padding: var(--spacing-sm) var(--spacing-md);
                 font-size: 12px;
               ">
-                鍙栨秷
+                取消
               </button>
-              <button id="create-folder-confirm-btn" class="modern-btn" style="
+              <button id="create-folder-confirm-btn" type="button" class="modern-btn" style="
                 padding: var(--spacing-sm) var(--spacing-md);
                 background: var(--success-color);
                 border: 1px solid var(--success-color);
@@ -161,7 +151,7 @@ export class CreateFolderModal {
                 font-size: 12px;
                 opacity: 0.5;
               " disabled>
-                鍒涘缓
+                创建
               </button>
             </div>
           </div>
@@ -169,56 +159,48 @@ export class CreateFolderModal {
       </div>
     `;
 
-    this.modal.style.display = 'none';
     document.body.appendChild(this.modal);
   }
 
   private setupEventListeners(): void {
     if (!this.modal) return;
 
-    // 鍏抽棴鎸夐挳
     const closeBtn = document.getElementById('create-folder-modal-close');
-    if (closeBtn) {
-      closeBtn.onclick = () => this.hide();
-    }
-
-    // 鍙栨秷鎸夐挳
     const cancelBtn = document.getElementById('create-folder-cancel-btn');
-    if (cancelBtn) {
-      cancelBtn.onclick = () => this.hide();
-    }
-
-    // 纭鎸夐挳
     const confirmBtn = document.getElementById('create-folder-confirm-btn') as HTMLButtonElement | null;
-    if (confirmBtn) {
-      confirmBtn.onclick = () => this.createFolder();
-    }
+    const nameInput = document.getElementById('create-folder-name') as HTMLInputElement | null;
+    const overlay = this.modal.querySelector('.modal-overlay');
 
-    // 鏂囦欢澶瑰悕绉拌緭鍏?    const nameInput = document.getElementById('create-folder-name') as HTMLInputElement;
+    closeBtn?.addEventListener('click', () => this.hide());
+    cancelBtn?.addEventListener('click', () => this.hide());
+    confirmBtn?.addEventListener('click', () => {
+      void this.createFolder();
+    });
+
     if (nameInput) {
-      nameInput.oninput = () => this.validateInput();
-      nameInput.onkeydown = (e) => {
+      nameInput.addEventListener('input', () => this.validateInput());
+      nameInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
-          if (confirmBtn && !confirmBtn.disabled) {
-            this.createFolder();
+          if (!confirmBtn?.disabled) {
+            void this.createFolder();
           }
         }
-      };
+      });
     }
 
-    // ESC閿叧闂?    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.isVisible) {
+    overlay?.addEventListener('click', (e) => {
+      if (e.target === overlay) {
         this.hide();
       }
     });
 
-    // 鐐瑰嚮閬僵鍏抽棴
-    this.modal.onclick = (e) => {
-      if (e.target === this.modal) {
+    this.boundKeydownHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && this.isVisible) {
         this.hide();
       }
     };
+    document.addEventListener('keydown', this.boundKeydownHandler);
   }
 
   public show(parentDir: string): void {
@@ -227,77 +209,71 @@ export class CreateFolderModal {
     this.currentParentDir = parentDir;
     this.isVisible = true;
 
-    // 鏇存柊鐖剁洰褰曟樉绀?    const parentDirEl = document.getElementById('create-folder-parent-dir');
+    const parentDirEl = document.getElementById('create-folder-parent-dir');
+    const nameInput = document.getElementById('create-folder-name') as HTMLInputElement | null;
+
     if (parentDirEl) {
       parentDirEl.textContent = parentDir;
     }
 
-    // 閲嶇疆杈撳叆妗?    const nameInput = document.getElementById('create-folder-name') as HTMLInputElement;
     if (nameInput) {
       nameInput.value = '';
-      nameInput.focus();
     }
 
-    // 閲嶇疆鐘舵€?    this.validateInput();
     this.hideError();
+    this.validateInput();
+    this.modal.style.display = 'block';
 
-    this.modal.style.display = 'flex';
+    window.setTimeout(() => {
+      nameInput?.focus();
+      nameInput?.select();
+    }, 0);
   }
 
   public hide(): void {
     if (!this.modal) return;
-    
+
     this.modal.style.display = 'none';
     this.isVisible = false;
     this.currentParentDir = '';
+    this.hideError();
   }
 
   private validateInput(): void {
-    const nameInput = document.getElementById('create-folder-name') as HTMLInputElement;
-    const confirmBtn = document.getElementById('create-folder-confirm-btn') as HTMLButtonElement;
+    const nameInput = document.getElementById('create-folder-name') as HTMLInputElement | null;
+    const confirmBtn = document.getElementById('create-folder-confirm-btn') as HTMLButtonElement | null;
     const fullPathEl = document.getElementById('create-folder-full-path');
-    
+
     if (!nameInput || !confirmBtn || !fullPathEl) return;
 
     const folderName = nameInput.value.trim();
     let isValid = true;
     let errorMessage = '';
 
-    // 妫€鏌ユ槸鍚︿负绌?    if (!folderName) {
+    if (!folderName) {
       isValid = false;
-      fullPathEl.textContent = '';
     } else {
-      // 妫€鏌ユ枃浠跺悕鏄惁鍖呭惈闈炴硶瀛楃
       const invalidChars = /[\/\\:*?"<>|]/;
       if (invalidChars.test(folderName)) {
         isValid = false;
-        errorMessage = '鏂囦欢澶瑰悕绉颁笉鑳藉寘鍚互涓嬪瓧绗? / \\ : * ? " < > |';
-      }
-      
-      // 妫€鏌ユ槸鍚︿互鐐瑰紑澶存垨缁撳熬
-      if (folderName.startsWith('.') || folderName.endsWith('.')) {
+        errorMessage = '文件夹名称不能包含字符: / \\ : * ? " < > |';
+      } else if (folderName.startsWith('.') || folderName.endsWith('.')) {
         isValid = false;
-        errorMessage = '鏂囦欢澶瑰悕绉颁笉鑳戒互鐐瑰紑澶存垨缁撳熬';
-      }
-      
-      // 妫€鏌ラ暱搴?      if (folderName.length > 255) {
+        errorMessage = '文件夹名称不能以点开头或结尾';
+      } else if (folderName.length > 255) {
         isValid = false;
-        errorMessage = '鏂囦欢澶瑰悕绉拌繃闀匡紙鏈€澶?55涓瓧绗︼級';
-      }
-      
-      // 鏇存柊瀹屾暣璺緞棰勮
-      if (isValid) {
-        const fullPath = this.joinRemotePath(this.currentParentDir, folderName);
-        fullPathEl.textContent = fullPath;
-      } else {
-        fullPathEl.textContent = '';
+        errorMessage = '文件夹名称过长，不能超过 255 个字符';
       }
     }
 
-    // 鏇存柊鎸夐挳鐘舵€?    confirmBtn.disabled = !isValid;
+    fullPathEl.textContent = isValid && folderName
+      ? this.joinRemotePath(this.currentParentDir, folderName)
+      : '';
+
+    confirmBtn.disabled = !isValid;
     confirmBtn.style.opacity = isValid ? '1' : '0.5';
 
-    // 鏄剧ず鎴栭殣钘忛敊璇俊鎭?    if (errorMessage) {
+    if (errorMessage) {
       this.showError(errorMessage);
     } else {
       this.hideError();
@@ -306,67 +282,74 @@ export class CreateFolderModal {
 
   private showError(message: string): void {
     const errorEl = document.getElementById('create-folder-error');
-    if (errorEl) {
-      errorEl.textContent = message;
-      errorEl.style.display = 'block';
-    }
+    if (!errorEl) return;
+
+    errorEl.textContent = message;
+    errorEl.style.display = 'block';
   }
 
   private hideError(): void {
     const errorEl = document.getElementById('create-folder-error');
-    if (errorEl) {
-      errorEl.style.display = 'none';
-    }
+    if (!errorEl) return;
+
+    errorEl.textContent = '';
+    errorEl.style.display = 'none';
   }
 
   private joinRemotePath(dir: string, name: string): string {
-    const base = dir.endsWith('/') ? dir.slice(0, -1) : dir;
-    if (!base) return `/${name}`;
+    const normalizedDir = (dir || '/').replace(/\\/g, '/');
+    const base = normalizedDir.endsWith('/') && normalizedDir !== '/'
+      ? normalizedDir.slice(0, -1)
+      : normalizedDir;
+    if (!base || base === '/') return `/${name}`;
     return `${base}/${name}`;
   }
 
   private async createFolder(): Promise<void> {
-    const nameInput = document.getElementById('create-folder-name') as HTMLInputElement;
-    if (!nameInput) return;
+    const nameInput = document.getElementById('create-folder-name') as HTMLInputElement | null;
+    const confirmBtn = document.getElementById('create-folder-confirm-btn') as HTMLButtonElement | null;
+    const cancelBtn = document.getElementById('create-folder-cancel-btn') as HTMLButtonElement | null;
+
+    if (!nameInput || !confirmBtn || !cancelBtn) return;
 
     const folderName = nameInput.value.trim();
     if (!folderName) return;
 
-    const confirmBtn = document.getElementById('create-folder-confirm-btn') as HTMLButtonElement;
-    const cancelBtn = document.getElementById('create-folder-cancel-btn') as HTMLButtonElement;
-    
-    // 绂佺敤鎸夐挳
     confirmBtn.disabled = true;
     cancelBtn.disabled = true;
-    confirmBtn.textContent = '鍒涘缓涓?..';
+    confirmBtn.textContent = '创建中...';
+    confirmBtn.style.opacity = '0.5';
 
     try {
-      // 鏋勫缓瀹屾暣璺緞
       const fullPath = this.joinRemotePath(this.currentParentDir, folderName);
-      
-      // 璋冪敤鍚庣API鍒涘缓鏂囦欢澶?      await invoke('sftp_create_directory', {
-        remotePath: fullPath
+      await invoke('sftp_create_directory', {
+        remotePath: fullPath,
       });
 
-      (window as any).showNotification && (window as any).showNotification(`鏂囦欢澶瑰垱寤烘垚鍔? ${folderName}`, 'success');
-      
-      // 鍒锋柊鏂囦欢鍒楄〃
-      if ((window as any).sftpManager && (window as any).sftpManager.refreshCurrentDirectory) {
-        (window as any).sftpManager.refreshCurrentDirectory();
-      }
-
+      (window as any).showNotification?.(`文件夹创建成功: ${folderName}`, 'success');
+      (window as any).sftpManager?.refreshCurrentDirectory?.();
       this.hide();
-
     } catch (error) {
-      console.error('鍒涘缓鏂囦欢澶瑰け璐?', error);
-      (window as any).showNotification && (window as any).showNotification(`鍒涘缓鏂囦欢澶瑰け璐? ${error}`, 'error');
-      this.showError(`鍒涘缓澶辫触: ${error}`);
+      console.error('创建文件夹失败:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      (window as any).showNotification?.(`创建文件夹失败: ${message}`, 'error');
+      this.showError(`创建失败: ${message}`);
     } finally {
-      // 鎭㈠鎸夐挳鐘舵€?      confirmBtn.disabled = false;
+      confirmBtn.disabled = false;
       cancelBtn.disabled = false;
-      confirmBtn.textContent = '鍒涘缓';
+      confirmBtn.textContent = '创建';
+      confirmBtn.style.opacity = '1';
+      this.validateInput();
     }
   }
+
+  public destroy(): void {
+    if (this.boundKeydownHandler) {
+      document.removeEventListener('keydown', this.boundKeydownHandler);
+      this.boundKeydownHandler = null;
+    }
+    this.modal?.remove();
+    this.modal = null;
+    this.isVisible = false;
+  }
 }
-
-

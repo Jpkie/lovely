@@ -10,7 +10,6 @@ export type AppPage =
   | 'remote-operations'
   | 'emergency-commands'
   | 'log-analysis'
-  | 'settings'
   | 'quick-detection'
   | 'database'
   | 'payloader'
@@ -23,7 +22,6 @@ export const APP_PAGES: AppPage[] = [
   'remote-operations',
   'emergency-commands',
   'log-analysis',
-  'settings',
   'quick-detection',
   'database',
   'payloader',
@@ -39,7 +37,6 @@ export const PAGE_TITLES: Record<AppPage, string> = {
   'remote-operations': 'SFTP文件',
   'emergency-commands': '命令执行',
   'log-analysis': '日志审计',
-  'settings': '设置',
   'quick-detection': '快速检测',
   'database': '数据库',
   'payloader': 'Payload工具',
@@ -53,7 +50,6 @@ export const PAGE_DESCRIPTIONS: Record<AppPage, string> = {
   'remote-operations': '远程文件管理与传输',
   'emergency-commands': '批量执行应急响应命令',
   'log-analysis': '系统日志分析与溯源',
-  'settings': '应用设置',
   'quick-detection': '一键安全检测与风险评估',
   'database': '数据库管理',
   'payloader': '安全测试Payload生成',

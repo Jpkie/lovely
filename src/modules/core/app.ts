@@ -284,9 +284,7 @@ export class LovelyResApp {
     // 菜单操作
     (window as any).handleUserMenuAction = (action: string) => {
         if (action === 'settings') {
-            this.stateManager.setCurrentPage('settings');
-            this.modernUIRenderer.updateState(this.stateManager.getState());
-            this.render();
+            (window as any).showSettingsOverlay?.();
         }
     };
     // UI 模式切换

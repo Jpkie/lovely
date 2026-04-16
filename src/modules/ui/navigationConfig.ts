@@ -125,13 +125,6 @@ const ALL_NAV_ITEMS: NavigationItem[] = [
     description: '远程SSH终端连接',
     iconKey: 'Code',
     visibleInModes: ['classic', 'ai']
-  },
-  {
-    id: 'settings',
-    title: '设置',
-    description: '应用设置',
-    iconKey: 'SettingConfig',
-    visibleInModes: ['classic', 'ai']
   }
 ];
 
@@ -147,8 +140,7 @@ const NAV_ORDER: Record<UIMode, AppPage[]> = {
     'ai-chat',
     'ai-command-center',
     'payloader',
-    'ssh-terminal',
-    'settings'
+    'ssh-terminal'
   ],
   'ai': [
     'ai-command-center',
@@ -158,7 +150,6 @@ const NAV_ORDER: Record<UIMode, AppPage[]> = {
     'remote-operations',
     'emergency-commands',
     'system-info',
-    'settings',
     'dashboard'
   ]
 };

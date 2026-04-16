@@ -27,7 +27,7 @@ import { FirewallContextMenu } from './modules/ui/firewallContextMenu';
 import { aiService } from './modules/ai/aiService';
 import { agentService } from './modules/ai/agentService';
 import { skillRegistry } from './modules/ai/skillRegistry';
-import type { AgentRunResult, AgentMode } from './modules/ai/agentTypes';
+import type { AgentRunResult } from './modules/ai/agentTypes';
 
 // 全局变量
 import { sftpManager } from './modules/remote/sftpManager';
@@ -45,10 +45,8 @@ interface AIChatHistoryItem {
 let aiChatHistory: AIChatHistoryItem[] = [];
 
 // Agent 模式状态
-let agentMode: AgentMode = 'normal';
 let agentSelectedSkills: string[] = [];
 let agentExecutionResult: AgentRunResult | null = null;
-let agentIsRunning: boolean = false;
 
 function mapProviderKeyToTypeForChat(key: string): 'openai' | 'deepseek' | 'claude' | 'custom' {
   if (key === 'openai' || key === 'deepseek' || key === 'claude' || key === 'custom') return key;
@@ -146,7 +144,7 @@ async function openSSHTerminalWindow(): Promise<void> {
 
     const sshWindow = new WebviewWindow('ssh-terminal', {
       url: '/ssh-terminal.html',
-      title: 'SSH Terminal - LovelyRes',
+      title: 'SSH Terminal - Linux Emergency Response Tool',
       width: 1000,
       height: 700,
       minWidth: 600,
@@ -2487,9 +2485,10 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
   (window as any).switchPage = (pageId: string) => {
     console.log('🔄 切换页面:', pageId);
 
-    // 重置远程操作页面初始化状态
-    if (pageId !== 'remote-operations') {
-      remoteOperationsPageInitialized = false;
+    if (pageId === 'settings') {
+      console.log('⚙️ 设置页统一使用覆盖层');
+      (window as any).showSettingsOverlay?.();
+      return;
     }
 
     // 更新导航项状态
@@ -2517,12 +2516,6 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
         setTimeout(() => {
           (window as any).refreshLogAnalysis();
         }, 200);
-      } else if (pageId === 'settings') {
-        console.log('⚙️ [PageSwitch] 初始化设置页面');
-        // 初始化设置页面
-        setTimeout(() => {
-          settingsPageManager.initialize();
-        }, 100);
       } else if (pageId === 'ai-chat') {
         setTimeout(() => {
           (window as any).initAIChatPage?.();
@@ -2764,8 +2757,6 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
 
   // 切换 AI 模式
   (window as any).switchAIMode = function (mode: 'normal' | 'agent') {
-    agentMode = mode;
-
     const normalBtn = document.getElementById('mode-normal-btn');
     const agentBtn = document.getElementById('mode-agent-btn');
     const normalArea = document.getElementById('normal-chat-area');
@@ -2831,12 +2822,6 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
   // 获取 DOM 元素，兼容不存在的情况
   function getElement(id: string): HTMLElement | null {
     return document.getElementById(id);
-  }
-
-  // 写入 HTML 到指定容器
-  function setHtml(id: string, html: string): void {
-    const el = getElement(id);
-    if (el) el.innerHTML = html;
   }
 
   // 显示/隐藏 Agent 结果区域
@@ -3054,7 +3039,6 @@ ${skillText ? '- Skill 结果：\n' + skillText : ''}
     }
 
     if (runBtn) runBtn.disabled = true;
-    agentIsRunning = true;
     agentExecutionResult = null;
 
     setAgentSectionVisible('agent-running-indicator', true);
@@ -3096,7 +3080,6 @@ ${skillText ? '- Skill 结果：\n' + skillText : ''}
       (window as any).renderAgentFinal?.(null, `执行失败：${msg}`);
     } finally {
       if (runBtn) runBtn.disabled = false;
-      agentIsRunning = false;
     }
   };
 

@@ -389,6 +389,17 @@ body {
   position: relative;
 }
 
+.logo-icon {
+  flex-shrink: 0;
+}
+
+.logo-icon img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
 .app-name {
   font-size: 16px;
   font-weight: 600;
@@ -672,8 +683,6 @@ body {
   justify-content: center;
   position: relative;
 }
-
-.modern-sidebar.mini-sidebar .nav-item:hover::after {\n  content: attr(data-tooltip) "\\A" attr(data-description);\n  position: absolute;\n  left: 100%;\n  top: 50%;\n  transform: translateY(-50%);\n  margin-left: 10px;\n  padding: 8px 12px;\n  background: var(--bg-secondary);\n  color: var(--text-primary);\n  border: 1px solid var(--border-color);\n  border-radius: 6px;\n  white-space: pre-line;\n  font-size: 12px;\n  line-height: 1.5;\n  z-index: 10000;\n  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);\n  pointer-events: none;\n  max-width: 220px;\n  opacity: 0;\n  animation: tooltipFadeIn 0.2s ease-out forwards;\n}\n\n@keyframes tooltipFadeIn {\n  from {\n    opacity: 0;\n    transform: translateY(-50%) translateX(-5px);\n  }\n  to {\n    opacity: 1;\n    transform: translateY(-50%) translateX(0);\n  }\n}
 
 .modern-sidebar.mini-sidebar .connection-card {
   padding: 8px;

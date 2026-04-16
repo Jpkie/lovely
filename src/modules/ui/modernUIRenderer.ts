@@ -312,8 +312,7 @@ export class ModernUIRenderer {
               <img src="/logo-32.png" alt="LovelyRes Logo" style="width: 100%; height: 100%; object-fit: contain;" />
             </div>
             <div class="app-info">
-              <div class="app-name">Lovely<span class="luxe-text">Res</span></div>
-              <div style="font-size: 10px; color: var(--text-secondary);">Linux Emergency Response</div>
+              <div class="app-name">Linux Emergency Response Tool</div>
             </div>
           </div>
 
@@ -648,8 +647,6 @@ export class ModernUIRenderer {
         return this.renderPayloaderPage();
       case 'ai-command-center':
         return this.renderAICommandCenterPage();
-      case 'settings':
-        return this.renderSettingsPage();
       case 'dashboard':
       default:
         return this.renderDashboard();
@@ -1251,7 +1248,7 @@ export class ModernUIRenderer {
 
           <div class="loading-status-area">
             <h3 class="loading-main-text">正在建立安全连接</h3>
-            <p class="loading-sub-text">LovelyRes 正在初始化远程环境</p>
+            <p class="loading-sub-text">LERT 正在初始化远程环境</p>
             
             <div class="loading-steps-list">
               ${stepsHtml}
@@ -1869,8 +1866,7 @@ export class ModernUIRenderer {
           </div>
           
           <div class="prompt-header-content">
-            <h2 class="prompt-title">Welcome to Lovely<span class="luxe-text">Res</span></h2>
-            <p class="prompt-subtitle">Linux 应急响应与管理工具</p>
+            <h2 class="prompt-title">Welcome to <span class="luxe-text">LERT</span></h2>
           </div>
 
           <div class="prompt-actions-container">
@@ -2765,7 +2761,7 @@ export class ModernUIRenderer {
         </div>
 
         <div class="status-right">
-          <span>LovelyRes v0.60</span>
+          <span>LERT v0.60</span>
         </div>
       </div>
     `;

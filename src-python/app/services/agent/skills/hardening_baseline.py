@@ -177,6 +177,10 @@ class HardeningBaselineSkill(BaseSkill):
 {risks_summary}
 """
 
+    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
+        """固定步骤模式：直接返回预定义的基线检查流程"""
+        return self.steps
+
 
 def register_hardening_baseline_skill(registry) -> None:
     """注册主机基线加固 skill"""

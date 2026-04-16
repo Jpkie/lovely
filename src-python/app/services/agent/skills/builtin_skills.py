@@ -24,10 +24,17 @@ class LogInvestigationSkill(BaseSkill):
     def category(self) -> str:
         return "investigation"
 
-    # ── 参数定义 ──
+    # ── 参数定义（按要求更新） ──
     @property
     def parameters(self) -> List[SkillParameter]:
         return [
+            SkillParameter(
+                name="source",
+                type="string",
+                description="日志来源：system（系统默认日志）、application（应用日志）、custom（自定义路径）",
+                required=False,
+                default="system",
+            ),
             SkillParameter(
                 name="log_path",
                 type="string",
@@ -43,9 +50,9 @@ class LogInvestigationSkill(BaseSkill):
                 default=None,
             ),
             SkillParameter(
-                name="lines",
+                name="page_size",
                 type="integer",
-                description="读取日志的行数上限",
+                description="单页读取日志的行数上限",
                 required=False,
                 default=100,
             ),
@@ -64,21 +71,37 @@ class LogInvestigationSkill(BaseSkill):
 
     def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
         """根据 args 动态构建日志调查步骤"""
+        source = args.get("source", "system")
         log_path = args.get("log_path", "/var/log/auth.log")
-        lines = args.get("lines", 100)
+        page_size = args.get("page_size", 100)
         keywords = args.get("keywords")
 
         dynamic_steps = [
             SkillStep(id="li_1", name="获取日志文件列表", description="列出可用日志文件", tool_name="list_log_files", parameters={}),
         ]
 
-        # 根据用户指定的 log_path 动态生成读取步骤
-        if log_path:
+        # 根据来源动态生成读取步骤
+        if source == "custom":
+            # 自定义路径只读取指定日志
             dynamic_steps.append(SkillStep(
-                id="li_2", name=f"读取目标日志 ({log_path})",
+                id="li_2", name=f"读取自定义日志 ({log_path})",
                 description=f"读取指定日志文件: {log_path}",
                 tool_name="read_system_log",
-                parameters={"log_path": log_path, "lines": lines},
+                parameters={"log_path": log_path, "lines": page_size},
+            ))
+        else:
+            # 系统默认读取认证和系统日志
+            dynamic_steps.append(SkillStep(
+                id="li_2", name="读取认证日志",
+                description="读取系统认证日志 /var/log/auth.log",
+                tool_name="read_system_log",
+                parameters={"log_path": "/var/log/auth.log", "lines": page_size},
+            ))
+            dynamic_steps.append(SkillStep(
+                id="li_3", name="读取系统日志",
+                description="读取系统主日志 /var/log/syslog",
+                tool_name="read_system_log",
+                parameters={"log_path": "/var/log/syslog", "lines": page_size},
             ))
 
         # 如果指定了关键词搜索
@@ -86,7 +109,7 @@ class LogInvestigationSkill(BaseSkill):
         if keywords:
             detect_params["keywords"] = keywords
         dynamic_steps.append(SkillStep(
-            id="li_3", name="日志分析检测",
+            id="li_4", name="日志分析检测",
             description="执行日志分析检测（含关键词过滤）",
             tool_name="detect_log",
             parameters=detect_params,
@@ -94,10 +117,10 @@ class LogInvestigationSkill(BaseSkill):
 
         # 补充 journalctl
         dynamic_steps.append(SkillStep(
-            id="li_4", name="读取 journal 日志",
+            id="li_5", name="读取 journal 日志",
             description="读取 systemd journal",
             tool_name="read_journalctl_log",
-            parameters={"page_size": min(lines, 200)},
+            parameters={"page_size": min(page_size, 200)},
         ))
 
         return dynamic_steps
@@ -145,19 +168,12 @@ class ProcessHuntSkill(BaseSkill):
     def category(self) -> str:
         return "investigation"
 
-    # ── 参数定义 ──
+    # ── 参数定义（按要求更新） ──
     @property
     def parameters(self) -> List[SkillParameter]:
         return [
             SkillParameter(
-                name="process_name",
-                type="string",
-                description="要查找的目标进程名称（如 nginx, python, suspicious_proc）",
-                required=False,
-                default=None,
-            ),
-            SkillParameter(
-                name="top_n",
+                name="top",
                 type="integer",
                 description="返回前 N 个高资源占用进程",
                 required=False,
@@ -169,6 +185,20 @@ class ProcessHuntSkill(BaseSkill):
                 description="排序字段 (cpu / memory)",
                 required=False,
                 default="cpu",
+            ),
+            SkillParameter(
+                name="focus",
+                type="string",
+                description="调查焦点：all（所有进程）、suspicious（仅可疑进程）、high_resource（仅高资源进程）",
+                required=False,
+                default="all",
+            ),
+            SkillParameter(
+                name="include_memory",
+                type="boolean",
+                description="是否包含系统内存信息检查",
+                required=False,
+                default=True,
             ),
         ]
 
@@ -183,19 +213,18 @@ class ProcessHuntSkill(BaseSkill):
 
     def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
         """根据 args 动态构建进程调查步骤"""
-        process_name = args.get("process_name")
-        top_n = args.get("top_n", 50)
+        top = args.get("top", 50)
         sort_by = args.get("sort_by", "cpu")
+        focus = args.get("focus", "all")
+        include_memory = args.get("include_memory", True)
 
         dynamic_steps = []
 
         # 基础进程检测
-        detect_params = {}
-        if process_name:
-            detect_params["process_name"] = process_name
+        detect_params = {"focus": focus}
         dynamic_steps.append(SkillStep(
             id="ph_1", name="进程分析",
-            description=f"{'查找进程: ' + process_name if process_name else '全量进程分析'}",
+            description=f"进程分析（焦点: {focus}）",
             tool_name="detect_process",
             parameters=detect_params,
         ))
@@ -203,16 +232,17 @@ class ProcessHuntSkill(BaseSkill):
         # 进程列表 + 排序
         dynamic_steps.append(SkillStep(
             id="ph_2", name="获取进程列表",
-            description=f"获取前 {top_n} 个进程（按 {sort_by} 排序）",
+            description=f"获取前 {top} 个进程（按 {sort_by} 排序）",
             tool_name="process_list",
-            parameters={"top": top_n, "sort_by": sort_by},
+            parameters={"top": top, "sort_by": sort_by},
         ))
 
-        # 内存信息
-        dynamic_steps.append(SkillStep(
-            id="ph_3", name="内存信息", description="获取内存使用情况",
-            tool_name="memory_info", parameters={},
-        ))
+        # 内存信息（可选）
+        if include_memory:
+            dynamic_steps.append(SkillStep(
+                id="ph_3", name="内存信息", description="获取内存使用情况",
+                tool_name="memory_info", parameters={},
+            ))
 
         return dynamic_steps
 
@@ -256,21 +286,14 @@ class SSHAuditSkill(BaseSkill):
     def category(self) -> str:
         return "audit"
 
-    # ── 参数定义 ──
+    # ── 参数定义（按要求更新） ──
     @property
     def parameters(self) -> List[SkillParameter]:
         return [
             SkillParameter(
-                name="check_config_file",
+                name="check_config",
                 type="boolean",
                 description="是否检查 sshd_config 配置文件内容",
-                required=False,
-                default=True,
-            ),
-            SkillParameter(
-                name="check_permissions",
-                type="boolean",
-                description="是否检查 SSH 相关文件权限",
                 required=False,
                 default=True,
             ),
@@ -282,11 +305,18 @@ class SSHAuditSkill(BaseSkill):
                 default=True,
             ),
             SkillParameter(
-                name="ssh_config_path",
-                type="string",
-                description="SSH 配置文件路径",
+                name="check_permissions",
+                type="boolean",
+                description="是否检查 SSH 相关文件权限",
                 required=False,
-                default="/etc/ssh/sshd_config",
+                default=True,
+            ),
+            SkillParameter(
+                name="check_sudo",
+                type="boolean",
+                description="是否审计 sudo 权限配置",
+                required=False,
+                default=True,
             ),
         ]
 
@@ -302,10 +332,10 @@ class SSHAuditSkill(BaseSkill):
 
     def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
         """根据 args 动态构建 SSH 审计步骤"""
-        check_config = args.get("check_config_file", True)
-        check_perms = args.get("check_permissions", True)
+        check_config = args.get("check_config", True)
         check_users = args.get("check_users", True)
-        config_path = args.get("ssh_config_path", "/etc/ssh/sshd_config")
+        check_permissions = args.get("check_permissions", True)
+        check_sudo = args.get("check_sudo", True)
 
         dynamic_steps = []
         step_idx = 1
@@ -313,37 +343,37 @@ class SSHAuditSkill(BaseSkill):
         if check_config:
             dynamic_steps.append(SkillStep(
                 id=f"ssh_{step_idx}", name="SSH 配置审计",
-                description=f"审计 SSH 配置: {config_path}",
+                description="审计 SSH 服务配置文件",
                 tool_name="detect_ssh_audit",
-                parameters={"config_path": config_path},
+                parameters={"config_path": "/etc/ssh/sshd_config"},
             ))
             step_idx += 1
 
         if check_users:
             dynamic_steps.append(SkillStep(
                 id=f"ssh_{step_idx}", name="用户审计",
-                description="检查 SSH 用户配置",
+                description="检查 SSH 用户配置和登录历史",
                 tool_name="detect_user_audit",
                 parameters={},
             ))
             step_idx += 1
 
-        if check_perms:
+        if check_permissions:
             dynamic_steps.append(SkillStep(
                 id=f"ssh_{step_idx}", name="文件权限检查",
-                description="检查 SSH 相关文件权限",
+                description="检查 SSH 相关文件和目录权限",
                 tool_name="detect_file_permission",
                 parameters={},
             ))
             step_idx += 1
 
-        # sudo 配置始终检查
-        dynamic_steps.append(SkillStep(
-            id=f"ssh_{step_idx}", name="检查 sudo 配置",
-            description="审计 sudo 权限",
-            tool_name="run_whitelisted_command",
-            parameters={"command_key": "sudoers"},
-        ))
+        if check_sudo:
+            dynamic_steps.append(SkillStep(
+                id=f"ssh_{step_idx}", name="检查 sudo 配置",
+                description="审计 sudo 权限配置",
+                tool_name="run_whitelisted_command",
+                parameters={"command_key": "sudoers"},
+            ))
 
         return dynamic_steps
 
@@ -465,6 +495,10 @@ class HostTriageSkill(BaseSkill):
 {risk_level}: {summary}
 """
 
+    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
+        """固定步骤模式：直接返回预定义的 steps"""
+        return self.steps
+
 
 class PortHuntSkill(BaseSkill):
     """端口狩猎 skill - 扫描和分析开放端口"""
@@ -530,6 +564,10 @@ class PortHuntSkill(BaseSkill):
 ## 建议
 {recommendations}
 """
+
+    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
+        """固定步骤模式：直接返回预定义的 steps"""
+        return self.steps
 
 
 class FixAdvisorSkill(BaseSkill):
@@ -601,6 +639,10 @@ Hostname: {hostname}
 ## 参考链接
 {references}
 """
+
+    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
+        """固定步骤模式：直接返回预定义的 steps"""
+        return self.steps
 
 
 def register_builtin_skills(registry) -> None:

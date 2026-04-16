@@ -150,6 +150,10 @@ class CapabilityCheckSkill(BaseSkill):
 {recommendations}
 """
 
+    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
+        """固定步骤模式：直接返回预定义的能力探测流程"""
+        return self.steps
+
 
 def register_capability_check_skill(registry) -> None:
     """注册环境能力检查 skill"""

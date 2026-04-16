@@ -193,6 +193,10 @@ class IncidentTimelineSkill(BaseSkill):
 {evidence_summary}
 """
 
+    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
+        """固定步骤模式：直接返回预定义的事件时间线分析流程"""
+        return self.steps
+
 
 def register_incident_timeline_skill(registry) -> None:
     """注册事件时间线 skill"""

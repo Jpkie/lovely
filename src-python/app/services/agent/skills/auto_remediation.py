@@ -218,6 +218,10 @@ class AutoRemediationSkill(BaseSkill):
 {recommendations}
 """
 
+    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
+        """固定步骤模式：直接返回预定义的修复流程"""
+        return self.steps
+
 
 def register_auto_remediation_skill(registry) -> None:
     """注册自动修复 skill"""

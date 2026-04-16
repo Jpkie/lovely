@@ -182,6 +182,10 @@ class RemediationVerificationSkill(BaseSkill):
 {evidence}
 """
 
+    def build_steps(self, args: Dict[str, Any], context: Dict[str, Any]) -> List[SkillStep]:
+        """固定步骤模式：直接返回预定义的验证流程"""
+        return self.steps
+
 
 def register_remediation_verification_skill(registry) -> None:
     """注册修复验证 skill"""

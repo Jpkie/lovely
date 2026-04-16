@@ -46,8 +46,8 @@ export const PAGE_TITLES: Record<AppPage, string> = {
   'quick-detection': '快速检测',
   'database': '数据库',
   'payloader': 'Payload工具',
-  'ai-chat': 'AI聊天',
-  'ai-command-center': 'AI命令中心'
+  'ai-chat': 'AI助手',
+  'ai-command-center': 'AI指挥台'
 };
 
 export const PAGE_DESCRIPTIONS: Record<AppPage, string> = {

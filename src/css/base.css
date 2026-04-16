@@ -2194,6 +2194,53 @@ body {
   opacity: 0.5;
 }
 
+.dashboard-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--success-color);
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.18);
+  flex-shrink: 0;
+}
+
+.last-update.dashboard-data-tick .dashboard-live-dot {
+  animation: dashboardLiveDotPulse 0.8s ease;
+}
+
+.last-update.dashboard-data-tick #dashboard-last-update-text {
+  animation: dashboardTimestampFlash 0.8s ease;
+}
+
+@keyframes dashboardLiveDotPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.28);
+  }
+  35% {
+    transform: scale(1.4);
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0.08);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+@keyframes dashboardTimestampFlash {
+  0% {
+    color: var(--text-secondary);
+    opacity: 0.8;
+  }
+  45% {
+    color: var(--primary-color);
+    opacity: 1;
+  }
+  100% {
+    color: var(--text-secondary);
+    opacity: 1;
+  }
+}
+
 .refresh-btn {
   padding: 8px 16px;
   font-size: 13px;
@@ -2655,8 +2702,9 @@ body {
   grid-template-rows: auto;
   gap: 20px;
   padding: 20px;
-  height: calc(100vh - 140px);
-  overflow-y: auto;
+  height: auto;
+  overflow: visible;
+  align-items: start;
 }
 
 .dashboard-card {
@@ -2736,6 +2784,217 @@ body {
   position: relative;
 }
 
+.top-processes-card {
+  grid-column: span 1;
+  min-height: 620px;
+}
+
+.dashboard-processes-table {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+  max-height: 100%;
+}
+
+.dashboard-processes-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.dashboard-processes-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-processes-toolbar-label,
+.dashboard-processes-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dashboard-processes-search,
+.dashboard-processes-page-size {
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.dashboard-processes-search {
+  min-width: 240px;
+}
+
+.dashboard-processes-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.dashboard-processes-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: 520px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+}
+
+.dashboard-processes-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dashboard-processes-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dashboard-processes-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+}
+
+.dashboard-processes-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.55);
+}
+
+.dashboard-processes-full-table thead th {
+  background: var(--bg-secondary);
+}
+
+.dashboard-processes-full-table tbody tr {
+  background: transparent;
+}
+
+.dashboard-processes-pagination {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+#chart-load {
+  width: 100%;
+  min-height: 220px;
+  height: 100%;
+}
+
+.chart-load .chart-container {
+  min-height: 0;
+  height: auto;
+}
+
+.chart-fallback-state {
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 20px;
+}
+
+.chart-fallback-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chart-fallback-message {
+  font-size: 12px;
+  line-height: 1.6;
+  max-width: 280px;
+}
+
+.load-trend-chart {
+  width: 100%;
+  height: 340px;
+  min-height: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.load-chart-summary {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.load-summary-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.load-summary-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.load-summary-label {
+  color: var(--text-secondary);
+}
+
+.load-summary-value {
+  color: var(--text-primary);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.load-chart-svg {
+  width: 100%;
+  flex: 1;
+  height: 272px;
+  min-height: 272px;
+  overflow: hidden;
+}
+
+.load-chart-grid-line {
+  stroke: rgba(148, 163, 184, 0.18);
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+}
+
+.load-chart-axis-line {
+  stroke: rgba(148, 163, 184, 0.24);
+  stroke-width: 1.2;
+}
+
+.load-chart-axis-label {
+  fill: var(--text-secondary);
+  font-size: 11px;
+}
+
+.load-chart-latest-point {
+  fill: #4f8df7;
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 2;
+}
+
+.load-chart-latest-ring {
+  fill: none;
+  stroke: rgba(79, 141, 247, 0.22);
+  stroke-width: 2;
+}
+
 /* Specific Card Layouts */
 .chart-cpu-memory {
   grid-column: span 1;
@@ -2750,11 +3009,65 @@ body {
 .chart-disk {
   grid-column: span 1;
   grid-row: span 1;
+  min-height: 420px;
+}
+
+.metric-card.dashboard-card {
+  min-height: 420px;
 }
 
 .chart-load {
   grid-column: span 1;
   grid-row: span 1;
+  min-height: 0;
+  align-self: start;
+}
+
+.load-overview-divider {
+  width: 100%;
+  height: 1px;
+  margin: 4px 0 0;
+  background: var(--border-color);
+  opacity: 0.7;
+}
+
+.load-overview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.load-overview-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.load-overview-header h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.load-overview-header .card-icon {
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+}
+
+.info-list.compact {
+  gap: 10px;
+}
+
+.info-list.compact .info-item {
+  padding-bottom: 10px;
+}
+
+.info-list.compact .label,
+.info-list.compact .value {
+  font-size: 12px;
 }
 
 .metric-card {

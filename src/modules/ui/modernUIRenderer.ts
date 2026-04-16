@@ -67,11 +67,75 @@ import {
   type IconKey
 } from './navigationConfig';
 
+function PayloadSkullIcon({
+  size = '18',
+  fill = 'currentColor'
+}: {
+  theme?: string;
+  size?: string;
+  fill?: string;
+} = {}): string {
+  return `
+    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path
+        d="M12 1.9C7.46 1.9 3.78 5.47 3.78 9.87C3.78 12.33 4.92 14.52 6.7 15.99C7.23 16.43 7.49 16.91 7.49 17.46V18C7.49 20.18 9.23 21.95 11.38 21.95H12.62C14.77 21.95 16.51 20.18 16.51 18V17.46C16.51 16.91 16.77 16.43 17.3 15.99C19.08 14.52 20.22 12.33 20.22 9.87C20.22 5.47 16.54 1.9 12 1.9Z"
+        stroke="${fill}"
+        stroke-width="1.9"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+      <rect x="6.4" y="9.55" width="4.05" height="3.75" rx="1.45" fill="${fill}" opacity="0.92"/>
+      <rect x="13.55" y="9.55" width="4.05" height="3.75" rx="1.45" fill="${fill}" opacity="0.92"/>
+      <path
+        d="M10.95 15.25L12 13.42L13.05 15.25C13.35 15.76 13 16.4 12.41 16.4H11.59C11 16.4 10.65 15.76 10.95 15.25Z"
+        fill="${fill}"
+      />
+      <path d="M9.65 17.35V20.8" stroke="${fill}" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M12 17.35V20.8" stroke="${fill}" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M14.35 17.35V20.8" stroke="${fill}" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  `;
+}
+
+function AIAssistantChatIcon({
+  size = '18',
+  fill = 'currentColor'
+}: {
+  theme?: string;
+  size?: string;
+  fill?: string;
+} = {}): string {
+  return `
+    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path
+        d="M10.95 4.45H16.82C19.98 4.45 22 6.47 22 9.62V12.72C22 15.88 19.98 17.9 16.82 17.9H16.22L13.15 20.48C12.55 20.98 11.68 20.56 11.68 19.78V17.9"
+        stroke="${fill}"
+        stroke-width="1.85"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        opacity="0.82"
+      />
+      <path
+        d="M6.92 4.02H12.08C15.55 4.02 17.72 6.2 17.72 9.67V13.13C17.72 16.6 15.55 18.78 12.08 18.78H9.08L5.3 21.83C4.67 22.34 3.75 21.89 3.75 21.09V18.7C1.73 17.72 0.75 15.83 0.75 13.13V9.67C0.75 6.2 2.93 4.02 6.92 4.02Z"
+        stroke="${fill}"
+        stroke-width="1.95"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+      <circle cx="7.15" cy="11.25" r="1.22" fill="${fill}" />
+      <circle cx="10.05" cy="11.25" r="1.22" fill="${fill}" />
+      <circle cx="12.95" cy="11.25" r="1.22" fill="${fill}" />
+    </svg>
+  `;
+}
+
 const ICON_MAP: Record<IconKey, any> = {
   Dashboard,
   ApplicationMenu,
   FolderOpen,
   Code,
+  PayloadSkull: PayloadSkullIcon,
+  AIAssistantChat: AIAssistantChatIcon,
   Rocket,
   Data,
   Log,
@@ -254,13 +318,6 @@ export class ModernUIRenderer {
   }
 
   /**
-   * 检测是否为 macOS
-   */
-  private isMacOS(): boolean {
-    return navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-  }
-
-  /**
    * 更新系统信息标签页的计数
    */
   public updateSystemInfoTabs(detailedInfo: any): void {
@@ -302,12 +359,10 @@ export class ModernUIRenderer {
    * 渲染标题栏
    */
   renderTitleBar(): string {
-    const isMac = this.isMacOS();
-
     return `
       <div class="modern-title-bar" data-tauri-drag-region>
         <div class="title-bar-left">
-          <div class="app-logo">
+          <div class="app-logo" title="主界面首页">
             <div class="logo-icon" style="width: 30px; height: 30px; border-radius: var(--border-radius-lg); display: flex; align-items: center; justify-content: center; overflow: hidden;">
               <img src="/logo-32.png" alt="LovelyRes Logo" style="width: 100%; height: 100%; object-fit: contain;" />
             </div>
@@ -321,26 +376,6 @@ export class ModernUIRenderer {
         <div class="title-bar-right">
           <!-- SSH终端按钮 -->
           ${this.renderSSHTerminalTitleButton()}
-
-          ${!isMac ? `
-          <div class="window-controls">
-            <button class="control-button minimize-btn" title="最小化">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                <rect x="2" y="5.5" width="8" height="1"/>
-              </svg>
-            </button>
-            <button class="control-button maximize-btn" title="最大化">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                <rect x="2" y="2" width="8" height="8" stroke="currentColor" stroke-width="1" fill="none"/>
-              </svg>
-            </button>
-            <button class="control-button close-btn close" title="关闭">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                <path d="M2.5 2.5L9.5 9.5M9.5 2.5L2.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-              </svg>
-            </button>
-          </div>
-          ` : ''}
         </div>
       </div>
     `;
@@ -486,7 +521,7 @@ export class ModernUIRenderer {
             const icon = iconFn ? iconFn({ theme: 'outline', size: '18', fill: 'currentColor' }) : '';
 
             return `
-              <div class="nav-item ${isActive ? 'active' : ''}" data-nav-id="${item.id}" data-tooltip="${item.title}" data-description="${item.description}">
+              <div class="nav-item ${isActive ? 'active' : ''}" data-nav-id="${item.id}" data-tooltip="${item.title}" data-description="${item.description}" title="${item.title}">
 
                 ${isActive ? `<div class="nav-item-indicator"></div>` : ''}
 
@@ -553,8 +588,8 @@ export class ModernUIRenderer {
             ${Plus({ theme: 'outline', size: '16', fill: 'currentColor' })}
         </div>
         <div class="dropdown-item-content">
-            <span class="dropdown-item-title">添加新服务器</span>
-            <span class="dropdown-item-subtitle">配置 SSH 连接</span>
+            <span class="dropdown-item-title">服务器管理</span>
+            <span class="dropdown-item-subtitle">服务器的添加与 SSH 连接管理</span>
         </div>
       </div>
       <div class="dropdown-divider"></div>
@@ -1921,6 +1956,10 @@ export class ModernUIRenderer {
     return this.dashboardRenderer.renderDashboard(systemInfo, theme);
   }
 
+  public renderDashboardSection(): string {
+    return this.renderDashboard();
+  }
+
   /**
    * 获取系统信息
    */
@@ -1933,14 +1972,6 @@ export class ModernUIRenderer {
     if (systemInfo && cache?.detailedInfo) {
       systemInfo.detailedInfo = cache.detailedInfo;
     }
-
-    // Trigger chart initialization if dashboard renderer instance exists
-    // Use setTimeout to ensure DOM is updated
-    setTimeout(() => {
-      if ((window as any).dashboardRendererInstance) {
-        (window as any).dashboardRendererInstance.initCharts();
-      }
-    }, 100);
 
     return systemInfo;
   }

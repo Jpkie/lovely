@@ -105,6 +105,7 @@ export class SystemInfoManager {
   private updateInterval?: number;
   private isUpdating = false;
   private detailedInfo?: any; // 缓存详细信息
+  private currentFetchPromise?: Promise<SystemInfo>;
 
   constructor() {
     // 构造函数保持简单
@@ -115,107 +116,116 @@ export class SystemInfoManager {
    */
   async fetchSystemInfo(): Promise<SystemInfo> {
     if (this.isUpdating) {
-      throw new Error('系统信息正在更新中');
+      if (this.currentFetchPromise) {
+        return this.currentFetchPromise;
+      }
+      if (this.systemInfo) {
+        return this.systemInfo;
+      }
     }
 
     this.isUpdating = true;
+    this.currentFetchPromise = (async () => {
+      try {
+        console.log('📊 正在获取系统信息（包括详细信息）...');
 
-    try {
-      console.log('📊 正在获取系统信息（包括详细信息）...');
+        // 并行执行所有命令获取系统信息和详细信息
+        const [
+          hostname,
+          uptime,
+          loadAvg,
+          memInfo,
+          diskInfo,
+          cpuInfo,
+          cpuUsage,
+          netConnections,
+          processCount,
+          userCount,
+          networkInterfaces,
+          dnsInfo,
+          gatewayInfo,
+          // 详细信息命令
+          processesData,
+          networkDetailsData,
+          servicesData,
+          usersData,
+          autostartData,
+          cronJobsData,
+          firewallRulesData,
+          networkTraffic
+        ] = await Promise.all([
+          // 基础系统信息
+          this.executeCommand('hostname'),
+          this.executeCommand('uptime'),
+          this.executeCommand('cat /proc/loadavg'),
+          this.executeCommand('cat /proc/meminfo'),
+          this.executeCommand('df -hP'), // 获取所有分区信息
+          this.executeCommand('cat /proc/cpuinfo | grep "model name" | head -1 && nproc'),
+          this.executeCommand('top -bn2 -d0.5 | grep "Cpu(s)" | tail -1 | awk \'{print 100-$8"%"}\' || echo "0%"'),
+          this.getNetworkConnectionCount(),
+          this.executeCommand('ps aux | wc -l'),
+          this.executeCommand('who | wc -l'),
+          this.executeCommand('ip addr show | grep -E "inet |UP|DOWN"'),
+          this.executeCommand('cat /etc/resolv.conf | grep nameserver'),
+          this.executeCommand('ip route | grep default'),
+          // 详细信息 - 添加STAT列，使用完整命令
+          this.executeCommand('ps aux --no-headers | awk \'BEGIN{OFS=","} {cmd=""; for(i=11;i<=NF;i++) cmd=cmd $i" "; print $2,$1,$8,$3,$4,cmd}\''),
+          this.getNetworkConnectionDetails(),
+          this.executeCommand('systemctl list-units --type=service --no-pager --no-legend | awk \'BEGIN{OFS=","} {print $1,$3,$4,$5" "$6" "$7" "$8" "$9}\''),
+          this.executeCommand('getent passwd | awk -F: \'BEGIN{OFS=","} {print $1,$3,$4,$6,$7}\''),
+          this.executeCommand('systemctl list-unit-files --type=service --state=enabled --no-pager --no-legend | awk \'BEGIN{OFS=","} {print $1,$2,"enabled","systemd"}\''),
+          this.getCronJobs(),
+          this.getFirewallRules(),
+          this.getNetworkTraffic()
+        ]);
 
-      // 并行执行所有命令获取系统信息和详细信息
-      const [
-        hostname,
-        uptime,
-        loadAvg,
-        memInfo,
-        diskInfo,
-        cpuInfo,
-        cpuUsage,
-        netConnections,
-        processCount,
-        userCount,
-        networkInterfaces,
-        dnsInfo,
-        gatewayInfo,
-        // 详细信息命令
-        processesData,
-        networkDetailsData,
-        servicesData,
-        usersData,
-        autostartData,
-        cronJobsData,
-        firewallRulesData,
-        networkTraffic
-      ] = await Promise.all([
-        // 基础系统信息
-        this.executeCommand('hostname'),
-        this.executeCommand('uptime'),
-        this.executeCommand('cat /proc/loadavg'),
-        this.executeCommand('cat /proc/meminfo'),
-        this.executeCommand('df -hP'), // 获取所有分区信息
-        this.executeCommand('cat /proc/cpuinfo | grep "model name" | head -1 && nproc'),
-        this.executeCommand('top -bn2 -d0.5 | grep "Cpu(s)" | tail -1 | awk \'{print 100-$8"%"}\' || echo "0%"'),
-        this.getNetworkConnectionCount(),
-        this.executeCommand('ps aux | wc -l'),
-        this.executeCommand('who | wc -l'),
-        this.executeCommand('ip addr show | grep -E "inet |UP|DOWN"'),
-        this.executeCommand('cat /etc/resolv.conf | grep nameserver'),
-        this.executeCommand('ip route | grep default'),
-        // 详细信息 - 添加STAT列，使用完整命令
-        this.executeCommand('ps aux --no-headers | awk \'BEGIN{OFS=","} {cmd=""; for(i=11;i<=NF;i++) cmd=cmd $i" "; print $2,$1,$8,$3,$4,cmd}\''),
-        this.getNetworkConnectionDetails(),
-        this.executeCommand('systemctl list-units --type=service --no-pager --no-legend | awk \'BEGIN{OFS=","} {print $1,$3,$4,$5" "$6" "$7" "$8" "$9}\''),
-        this.executeCommand('getent passwd | awk -F: \'BEGIN{OFS=","} {print $1,$3,$4,$6,$7}\''),
-        this.executeCommand('systemctl list-unit-files --type=service --state=enabled --no-pager --no-legend | awk \'BEGIN{OFS=","} {print $1,$2,"enabled","systemd"}\''),
-        this.getCronJobs(),
-        this.getFirewallRules(),
-        this.getNetworkTraffic()
-      ]);
+        // 解析基础系统信息
+        this.systemInfo = this.parseSystemInfo({
+          hostname: hostname.trim(),
+          uptime: uptime.trim(),
+          loadAvg: loadAvg.trim(),
+          memInfo: memInfo.trim(),
+          diskInfo: diskInfo.trim(),
+          cpuInfo: cpuInfo.trim(),
+          cpuUsage: cpuUsage.trim(),
+          netConnections: netConnections.trim(),
+          processCount: processCount.trim(),
+          userCount: userCount.trim(),
+          networkInterfaces: networkInterfaces.trim(),
+          dnsInfo: dnsInfo.trim(),
+          gatewayInfo: gatewayInfo.trim(),
+          networkTraffic
+        });
 
-      // 解析基础系统信息
-      this.systemInfo = this.parseSystemInfo({
-        hostname: hostname.trim(),
-        uptime: uptime.trim(),
-        loadAvg: loadAvg.trim(),
-        memInfo: memInfo.trim(),
-        diskInfo: diskInfo.trim(),
-        cpuInfo: cpuInfo.trim(),
-        cpuUsage: cpuUsage.trim(),
-        netConnections: netConnections.trim(),
-        processCount: processCount.trim(),
-        userCount: userCount.trim(),
-        networkInterfaces: networkInterfaces.trim(),
-        dnsInfo: dnsInfo.trim(),
-        gatewayInfo: gatewayInfo.trim(),
-        networkTraffic
-      });
+        // 解析详细信息并缓存
+        this.detailedInfo = {
+          processes: this.parseProcesses(processesData),
+          networkDetails: this.parseNetworkDetails(networkDetailsData),
+          services: this.parseServices(servicesData),
+          users: this.parseUsers(usersData),
+          autostart: this.parseAutostart(autostartData),
+          cronJobs: this.parseCronJobs(cronJobsData),
+          firewallRules: this.parseFirewallRules(firewallRulesData)
+        };
 
-      // 解析详细信息并缓存
-      this.detailedInfo = {
-        processes: this.parseProcesses(processesData),
-        networkDetails: this.parseNetworkDetails(networkDetailsData),
-        services: this.parseServices(servicesData),
-        users: this.parseUsers(usersData),
-        autostart: this.parseAutostart(autostartData),
-        cronJobs: this.parseCronJobs(cronJobsData),
-        firewallRules: this.parseFirewallRules(firewallRulesData)
-      };
+        // 将详细信息附加到系统信息对象中
+        if (this.systemInfo) {
+          this.systemInfo.detailedInfo = this.detailedInfo;
+        }
 
-      // 将详细信息附加到系统信息对象中
-      if (this.systemInfo) {
-        this.systemInfo.detailedInfo = this.detailedInfo;
+        console.log('✅ 系统信息和详细信息获取完成');
+        return this.systemInfo;
+
+      } catch (error) {
+        console.error('❌ 获取系统信息失败:', error);
+        throw new Error(`获取系统信息失败: ${error}`);
+      } finally {
+        this.isUpdating = false;
+        this.currentFetchPromise = undefined;
       }
+    })();
 
-      console.log('✅ 系统信息和详细信息获取完成');
-      return this.systemInfo;
-
-    } catch (error) {
-      console.error('❌ 获取系统信息失败:', error);
-      throw new Error(`获取系统信息失败: ${error}`);
-    } finally {
-      this.isUpdating = false;
-    }
+    return this.currentFetchPromise;
   }
 
   /**
@@ -465,7 +475,7 @@ export class SystemInfoManager {
   /**
    * 开始自动更新系统信息
    */
-  startAutoUpdate(intervalMs: number = 30000): void {
+  startAutoUpdate(intervalMs: number = 3000): void {
     this.stopAutoUpdate();
 
     this.updateInterval = window.setInterval(async () => {

@@ -1785,10 +1785,25 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
   (window as any).refreshDashboard = () => {
     try {
       if (app) {
-        // 重新渲染主工作区
-        const mainWorkspace = document.querySelector('.main-workspace');
-        if (mainWorkspace) {
-          mainWorkspace.innerHTML = app.getStateManager().getUIRenderer().renderMainWorkspace();
+        const currentPage = app.getStateManager().getState()?.currentPage;
+        if (currentPage !== 'dashboard') {
+          return;
+        }
+
+        const uiRenderer = app.getStateManager().getUIRenderer() as any;
+        const systemInfo = app.getSSHManager().getSystemInfo();
+        const dashboardRenderer = uiRenderer?.dashboardRenderer;
+
+        if (systemInfo && dashboardRenderer && typeof dashboardRenderer.applyDashboardUpdate === 'function') {
+          const updated = dashboardRenderer.applyDashboardUpdate(systemInfo);
+          if (!updated) {
+            throw new Error('Dashboard in-place update failed');
+          }
+        } else {
+          const mainWorkspace = document.querySelector('.main-workspace');
+          if (mainWorkspace) {
+            mainWorkspace.innerHTML = uiRenderer.renderMainWorkspace();
+          }
         }
         console.log('✅ 仪表盘已刷新');
       }
@@ -2111,6 +2126,9 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
               if (currentPage === 'dashboard' || currentPage === 'system-info') {
                 (window as any).loadSystemDetailedInfo(true);
               }
+              if (currentPage === 'dashboard') {
+                (window as any).startDashboardAutoRefresh?.();
+              }
             }
 
             console.log('✅ 服务器连接成功');
@@ -2185,6 +2203,8 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
       if (sshManager) {
         await sshManager.disconnect(serverId);
         console.log('✅ 服务器已断开连接');
+
+        (window as any).stopDashboardAutoRefresh?.();
 
         // 更新UI
         (window as any).refreshServerList();
@@ -3185,15 +3205,15 @@ ${skillText ? '- Skill 结果：\n' + skillText : ''}
       cache.isLoading = true;
 
       const app = (window as any).app;
-      if (app && app.systemInfoManager) {
-        const existingSystemInfo = app.sshManager?.getSystemInfo?.();
+      if (app && app.sshManager) {
+        const existingSystemInfo = app.sshManager.getSystemInfo?.();
         let detailedInfo: any;
 
         if (!existingSystemInfo || forceRefresh) {
-          const systemInfo = await app.systemInfoManager.fetchSystemInfo();
-          detailedInfo = systemInfo?.detailedInfo || await app.systemInfoManager.getDetailedSystemInfo();
+          const systemInfo = await app.sshManager.fetchSystemInfo();
+          detailedInfo = systemInfo?.detailedInfo || await app.sshManager.getDetailedSystemInfo();
         } else {
-          detailedInfo = await app.systemInfoManager.getDetailedSystemInfo();
+          detailedInfo = await app.sshManager.getDetailedSystemInfo();
         }
 
         console.log('✅ 系统详细信息加载完成:', detailedInfo);
@@ -3216,8 +3236,8 @@ ${skillText ? '- Skill 结果：\n' + skillText : ''}
         // 检查当前页面，如果是仪表盘则重新渲染
         const currentPage = (window as any).app.stateManager.getState().currentPage;
         if (currentPage === 'dashboard') {
-          console.log('🔄 重新渲染仪表盘以显示详细信息');
-          (window as any).app.render();
+          console.log('🔄 原地更新仪表盘数据');
+          (window as any).refreshDashboard?.();
         } else {
           // 更新当前显示的标签页数据
           const activeTab = document.querySelector('.tab-btn.active');
@@ -3295,8 +3315,8 @@ ${skillText ? '- Skill 结果：\n' + skillText : ''}
 
       // 获取应用实例
       const app = (window as any).app;
-      if (!app || !app.systemInfoManager) {
-        console.error('❌ 应用实例或系统信息管理器未找到');
+      if (!app || !app.sshManager) {
+        console.error('❌ 应用实例或 SSH 管理器未找到');
         if (content) {
           content.innerHTML = `
             <div style="display: flex; align-items: center; justify-content: center; padding: 40px; color: var(--text-error);">
@@ -3311,10 +3331,11 @@ ${skillText ? '- Skill 结果：\n' + skillText : ''}
       }
 
       // 清除缓存以确保获取最新数据
-      app.systemInfoManager.clearCache();
+      app.sshManager.clearSystemInfoCache();
 
       // 重新获取所有系统信息
-      const detailedInfo = await app.systemInfoManager.getDetailedSystemInfo();
+      await app.sshManager.fetchSystemInfo();
+      const detailedInfo = await app.sshManager.getDetailedSystemInfo();
       console.log('✅ 系统信息刷新完成');
 
       // 将详细信息更新到状态中，以便 Tab 上的计数徽章能更新
@@ -3825,6 +3846,8 @@ ${skillText ? '- Skill 结果：\n' + skillText : ''}
     });
   };
 
+  const DASHBOARD_AUTO_REFRESH_MS = 3000;
+
   // 仪表盘自动刷新相关函数
   let dashboardRefreshInterval: number | null = null;
 
@@ -3833,19 +3856,19 @@ ${skillText ? '- Skill 结果：\n' + skillText : ''}
     // 先停止之前的定时器
     (window as any).stopDashboardAutoRefresh();
 
-    console.log('🔄 启动仪表盘自动刷新 (每30秒)');
+    console.log(`🔄 启动仪表盘自动刷新 (每${DASHBOARD_AUTO_REFRESH_MS / 1000}秒)`);
 
-    // 设置30秒自动刷新
+    // 设置短周期自动刷新，强制拉取最新数据
     dashboardRefreshInterval = window.setInterval(() => {
       const currentPage = (window as any).app?.stateManager?.getState()?.currentPage;
       if (currentPage === 'dashboard') {
         console.log('🔄 仪表盘自动刷新');
-        (window as any).loadSystemDetailedInfo();
+        (window as any).loadSystemDetailedInfo(true);
       } else {
         // 如果不在仪表盘页面，停止自动刷新
         (window as any).stopDashboardAutoRefresh();
       }
-    }, 30000); // 30秒
+    }, DASHBOARD_AUTO_REFRESH_MS);
   };
 
   // 停止仪表盘自动刷新

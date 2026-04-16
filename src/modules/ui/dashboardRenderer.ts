@@ -16,29 +16,35 @@ import {
 } from '@icon-park/svg';
 
 export class DashboardRenderer {
-  private charts: Map<string, any> = new Map();
-  private currentTheme: string = 'dark';
+  private processSearchQuery = '';
+  private processPageSize = 50;
+  private processCurrentPage = 1;
   private history: {
     cpu: { x: number; y: number }[];
     memory: { x: number; y: number }[];
     network: { rx: { x: number; y: number }[]; tx: { x: number; y: number }[] };
+    load: {
+      one: { x: number; y: number }[];
+      five: { x: number; y: number }[];
+      fifteen: { x: number; y: number }[];
+    };
   } = {
       cpu: [],
       memory: [],
-      network: { rx: [], tx: [] }
+      network: { rx: [], tx: [] },
+      load: { one: [], five: [], fifteen: [] }
     };
   private lastNetworkData: { rx: number; tx: number; timestamp: number } | null = null;
 
   constructor() {
-    // Expose this instance to window for the trigger hack
+    // Expose this instance to window for dashboard refresh hooks
     (window as any).dashboardRendererInstance = this;
   }
 
   /**
    * 渲染系统信息仪表盘
    */
-  renderDashboard(systemInfo?: SystemInfo, theme: string = 'dark'): string {
-    this.currentTheme = theme;
+  renderDashboard(systemInfo?: SystemInfo, _theme: string = 'dark'): string {
     const isConnected = sshConnectionManager.isConnected();
 
     if (!isConnected) {
@@ -51,9 +57,6 @@ export class DashboardRenderer {
     // Update history data
     this.updateHistory(systemInfo);
 
-    // Trigger chart initialization after render
-    const triggerScript = `<img src="x" style="display:none" onerror="if(window.dashboardRendererInstance) window.dashboardRendererInstance.initCharts()" />`;
-
     return `
       <div class="dashboard-container">
         <div class="dashboard-header">
@@ -63,10 +66,11 @@ export class DashboardRenderer {
             </div>
             <div class="header-info">
               <h2>系统监控仪表盘</h2>
-              <div class="last-update">
-                <span>最后更新: ${this.formatTime(systemInfo.lastUpdate)}</span>
+              <div class="last-update" id="dashboard-last-update">
+                <span class="dashboard-live-dot" aria-hidden="true"></span>
+                <span id="dashboard-last-update-text">最后更新: ${this.formatTime(systemInfo.lastUpdate)}</span>
                 <span class="separator">•</span>
-                <span>自动刷新: 30秒</span>
+                <span>自动刷新: 3秒</span>
               </div>
             </div>
           </div>
@@ -78,25 +82,25 @@ export class DashboardRenderer {
 
         <!-- 关键指标概览 (Top Row) -->
         <div class="metrics-overview">
-          ${this.renderMetricCard('CPU使用率', this.getCpuUsage(systemInfo), '%', 'warning')}
-          ${this.renderMetricCard('内存使用率', this.getMemoryUsage(systemInfo), '%', 'primary')}
-          ${this.renderMetricCard('磁盘使用率', this.getDiskUsage(systemInfo), '%', 'error')}
-          ${this.renderMetricCard('网络连接', systemInfo.networkConnections.toString(), '个', 'success')}
+          ${this.renderMetricCard('CPU使用率', this.getCpuUsage(systemInfo), '%', 'warning', 'dashboard-metric-cpu')}
+          ${this.renderMetricCard('内存使用率', this.getMemoryUsage(systemInfo), '%', 'primary', 'dashboard-metric-memory')}
+          ${this.renderMetricCard('磁盘使用率', this.getDiskUsage(systemInfo), '%', 'error', 'dashboard-metric-disk')}
+          ${this.renderMetricCard('网络连接', systemInfo.networkConnections.toString(), '个', 'success', 'dashboard-metric-network')}
         </div>
 
         <!-- Bento Grid Layout -->
         <div class="dashboard-grid-bento">
           
-          <!-- Row 1: Disk Space Detailed & Load -->
-          <div class="dashboard-card modern-card chart-disk" style="height: auto; min-height: 240px;">
-            <div class="card-header">
-              <div class="card-icon purple">
-                ${Computer({ theme: 'filled', size: '18', fill: 'currentColor' })}
+          <!-- Row 1: Top Processes & Load -->
+          <div class="dashboard-card modern-card top-processes-card">
+             <div class="card-header">
+              <div class="card-icon blue">
+                ${TrendTwo({ theme: 'filled', size: '18', fill: 'currentColor' })}
               </div>
-              <h3>磁盘空间分布</h3>
+              <h3>实时 Top 进程 (CPU)</h3>
             </div>
-            <div class="card-content" style="padding: 20px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; max-height: 400px;">
-              ${this.renderPartitionList(systemInfo)}
+            <div id="dashboard-top-processes" class="card-content table-container dashboard-processes-table">
+              ${this.renderTopProcessesTable(systemInfo)}
             </div>
           </div>
 
@@ -107,63 +111,95 @@ export class DashboardRenderer {
               </div>
               <h3>系统负载</h3>
             </div>
-            <div class="card-content chart-container">
-              <div id="chart-load"></div>
+            <div id="dashboard-load-chart" class="card-content chart-container">
+              ${this.renderLoadCardContent(systemInfo)}
             </div>
           </div>
 
-          <!-- Row 2: Top Processes & Overview -->
-          <div class="dashboard-card modern-card top-processes-card">
-             <div class="card-header">
-              <div class="card-icon blue">
-                ${TrendTwo({ theme: 'filled', size: '18', fill: 'currentColor' })}
+          <!-- Row 2: Disk Space & Overview -->
+          <div class="dashboard-card modern-card chart-disk" style="height: auto; min-height: 240px;">
+            <div class="card-header">
+              <div class="card-icon purple">
+                ${Computer({ theme: 'filled', size: '18', fill: 'currentColor' })}
               </div>
-              <h3>实时 Top 进程 (CPU)</h3>
+              <h3>磁盘空间分布</h3>
             </div>
-            <div class="card-content table-container" style="overflow-x: auto;">
-              ${this.renderTopProcessesTable(systemInfo)}
-            </div>
-          </div>
-
-          <div class="dashboard-card modern-card metric-card">
-             <div class="card-header">
-              <div class="card-icon secondary">
-                ${Peoples({ theme: 'filled', size: '18', fill: 'currentColor' })}
-              </div>
-              <h3>系统概览</h3>
-            </div>
-            <div class="card-content">
-               <div class="info-list">
-                <div class="info-item">
-                  <span class="label">主机名</span>
-                  <span class="value">${systemInfo.hostname}</span>
-                </div>
-                <div class="info-item">
-                  <span class="label">运行时间</span>
-                  <span class="value">${systemInfo.uptime}</span>
-                </div>
-                <div class="info-item">
-                  <span class="label">CPU型号</span>
-                  <span class="value" title="${systemInfo.cpuInfo.model}">
-                    ${this.truncateText(systemInfo.cpuInfo.model, 20)}
-                  </span>
-                </div>
-                 <div class="info-item">
-                  <span class="label">核心数</span>
-                  <span class="value">${systemInfo.cpuInfo.cores} 核</span>
-                </div>
-                 <div class="info-item">
-                  <span class="label">进程数</span>
-                  <span class="value">${systemInfo.processCount}</span>
-                </div>
-              </div>
+            <div id="dashboard-partition-list" class="card-content" style="padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+              ${this.renderPartitionList(systemInfo)}
             </div>
           </div>
 
         </div>
       </div>
-      ${triggerScript}
     `;
+  }
+
+  public applyDashboardUpdate(systemInfo?: SystemInfo): boolean {
+    if (!systemInfo) {
+      return false;
+    }
+
+    this.updateHistory(systemInfo);
+
+    const lastUpdateText = document.getElementById('dashboard-last-update-text');
+    if (lastUpdateText) {
+      lastUpdateText.textContent = `最后更新: ${this.formatTime(systemInfo.lastUpdate)}`;
+    }
+
+    this.updateMetricValue('dashboard-metric-cpu', this.getCpuUsage(systemInfo), '%');
+    this.updateMetricValue('dashboard-metric-memory', this.getMemoryUsage(systemInfo), '%');
+    this.updateMetricValue('dashboard-metric-disk', this.getDiskUsage(systemInfo), '%');
+    this.updateMetricValue('dashboard-metric-network', systemInfo.networkConnections.toString(), '个');
+
+    const partitionList = document.getElementById('dashboard-partition-list');
+    if (partitionList) {
+      partitionList.innerHTML = this.renderPartitionList(systemInfo);
+    }
+
+    const loadChart = document.getElementById('dashboard-load-chart');
+    if (loadChart) {
+      loadChart.innerHTML = this.renderLoadCardContent(systemInfo);
+    }
+
+    const topProcesses = document.getElementById('dashboard-top-processes');
+    if (topProcesses) {
+      topProcesses.innerHTML = this.renderTopProcessesTable(systemInfo);
+    }
+
+    const lastUpdate = document.getElementById('dashboard-last-update');
+    if (lastUpdate) {
+      lastUpdate.classList.remove('dashboard-data-tick');
+      void lastUpdate.offsetWidth;
+      lastUpdate.classList.add('dashboard-data-tick');
+    }
+
+    return true;
+  }
+
+  public setProcessSearchQuery(query: string): void {
+    this.processSearchQuery = query.trim().toLowerCase();
+    this.processCurrentPage = 1;
+    this.refreshProcessTable();
+  }
+
+  public setProcessPageSize(pageSize: string): void {
+    const nextSize = parseInt(pageSize, 10);
+    this.processPageSize = Number.isFinite(nextSize) && nextSize > 0 ? nextSize : 50;
+    this.processCurrentPage = 1;
+    this.refreshProcessTable();
+  }
+
+  public goToProcessPage(page: number): void {
+    this.processCurrentPage = Math.max(1, page);
+    this.refreshProcessTable();
+  }
+
+  private refreshProcessTable(): void {
+    const systemInfo = (this as any).currentSystemInfo as SystemInfo | undefined;
+    const topProcesses = document.getElementById('dashboard-top-processes');
+    if (systemInfo && topProcesses) {
+      topProcesses.innerHTML = this.renderTopProcessesTable(systemInfo);
+    }
   }
 
   /**
@@ -174,96 +210,235 @@ export class DashboardRenderer {
       return '<div class="no-data" style="padding: 20px; text-align: center; color: var(--text-secondary);">暂无进程数据</div>';
     }
 
-    // Sort by CPU usage (descending)
+    // Sort by CPU usage (descending) and render all rows
     const processes = [...systemInfo.detailedInfo.processes]
-      .sort((a, b) => parseFloat(b.cpu) - parseFloat(a.cpu))
-      .slice(0, 6); // Top 6
+      .sort((a, b) => parseFloat(b.cpu) - parseFloat(a.cpu));
+
+    const filteredProcesses = this.processSearchQuery
+      ? processes.filter((process) => {
+        const haystack = `${process.pid} ${process.user} ${process.command}`.toLowerCase();
+        return haystack.includes(this.processSearchQuery);
+      })
+      : processes;
+
+    const totalProcesses = filteredProcesses.length;
+    const totalPages = Math.max(1, Math.ceil(totalProcesses / this.processPageSize));
+    const currentPage = Math.min(this.processCurrentPage, totalPages);
+    const startIndex = (currentPage - 1) * this.processPageSize;
+    const pagedProcesses = filteredProcesses.slice(startIndex, startIndex + this.processPageSize);
+    this.processCurrentPage = currentPage;
 
     return `
-      <table class="modern-table" style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
-        <thead>
-          <tr style="border-bottom: 1px solid var(--border-color); text-align: left;">
-            <th style="padding: 8px;">PID</th>
-            <th style="padding: 8px;">用户</th>
-            <th style="padding: 8px;">CPU</th>
-            <th style="padding: 8px;">内存</th>
-            <th style="padding: 8px;">命令</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${processes.map(p => `
-            <tr style="border-bottom: 1px solid var(--border-color-light);">
-              <td style="padding: 8px;">${p.pid}</td>
-              <td style="padding: 8px;">${p.user}</td>
-              <td style="padding: 8px; color: var(--warning-color);">${p.cpu}%</td>
-              <td style="padding: 8px;">${p.memory}%</td>
-              <td style="padding: 8px;" title="${p.command}">${this.truncateText(p.command, 25)}</td>
+      <div class="dashboard-processes-toolbar">
+        <div class="dashboard-processes-toolbar-group">
+          <input
+            type="text"
+            class="dashboard-processes-search"
+            placeholder="搜索 PID / 用户 / 命令"
+            value="${this.escapeHtmlAttribute(this.processSearchQuery)}"
+            oninput="window.dashboardRendererInstance?.setProcessSearchQuery(this.value)"
+          />
+        </div>
+        <div class="dashboard-processes-toolbar-group">
+          <span class="dashboard-processes-toolbar-label">每页显示</span>
+          <select class="dashboard-processes-page-size" onchange="window.dashboardRendererInstance?.setProcessPageSize(this.value)">
+            ${[25, 50, 100, 200].map(size => `
+              <option value="${size}" ${this.processPageSize === size ? 'selected' : ''}>${size}</option>
+            `).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="dashboard-processes-meta">
+        <span>共 ${totalProcesses} 个进程</span>
+        <span>第 ${currentPage} / ${totalPages} 页</span>
+      </div>
+      <div class="dashboard-processes-scroll">
+        <table class="modern-table dashboard-processes-full-table" style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--border-color); text-align: left;">
+              <th style="padding: 8px;">PID</th>
+              <th style="padding: 8px;">用户</th>
+              <th style="padding: 8px;">CPU</th>
+              <th style="padding: 8px;">内存</th>
+              <th style="padding: 8px;">命令</th>
             </tr>
-          `).join('')}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            ${pagedProcesses.map(p => `
+              <tr style="border-bottom: 1px solid var(--border-color-light);">
+                <td style="padding: 8px;">${p.pid}</td>
+                <td style="padding: 8px;">${p.user}</td>
+                <td style="padding: 8px; color: var(--warning-color);">${p.cpu}%</td>
+                <td style="padding: 8px;">${p.memory}%</td>
+                <td style="padding: 8px;" title="${p.command}">${this.truncateText(p.command, 64)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="dashboard-processes-pagination">
+        <button class="modern-btn secondary small" ${currentPage <= 1 ? 'disabled' : ''} onclick="window.dashboardRendererInstance?.goToProcessPage(${currentPage - 1})">上一页</button>
+        <button class="modern-btn secondary small" ${currentPage >= totalPages ? 'disabled' : ''} onclick="window.dashboardRendererInstance?.goToProcessPage(${currentPage + 1})">下一页</button>
+      </div>
     `;
   }
 
-  /**
-   * Initialize ApexCharts
-   */
-  public initCharts() {
-    // Check if ApexCharts is loaded
-    if (typeof ApexCharts === 'undefined') {
-      console.warn('ApexCharts not loaded yet.');
-      return;
+  private renderLoadCardContent(systemInfo: SystemInfo): string {
+    return `
+      ${this.renderLoadTrendChart(systemInfo)}
+      <div class="load-overview-divider"></div>
+      <div class="load-overview-section">
+        <div class="load-overview-header">
+          <div class="card-icon secondary">
+            ${Peoples({ theme: 'filled', size: '16', fill: 'currentColor' })}
+          </div>
+          <h4>系统概览</h4>
+        </div>
+        <div class="info-list compact" id="dashboard-system-overview">
+          ${this.renderSystemOverview(systemInfo)}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderLoadTrendChart(systemInfo: SystemInfo): string {
+    const loadValues = (systemInfo.loadAverage || [])
+      .map((v: string) => parseFloat(v))
+      .filter((value: number) => Number.isFinite(value));
+
+    if (loadValues.length !== 3) {
+      return `
+        <div class="chart-fallback-state">
+          <div class="chart-fallback-title">系统负载数据不可用</div>
+          <div class="chart-fallback-message">当前会话没有返回有效的 1/5/15 分钟负载值。</div>
+        </div>
+      `;
     }
 
-    // Destroy existing charts
-    this.charts.forEach(chart => {
-      try {
-        chart.destroy();
-      } catch (e) {
-        console.warn('Failed to destroy chart:', e);
+    const loadPercentValues = loadValues.map((value) => this.normalizeLoadPercentage(value, systemInfo.cpuInfo.cores));
+
+    const loadHistory = [
+      { key: 'one', label: '1分钟负载', color: '#4f8df7', points: this.history.load.one, emphasis: true },
+      { key: 'five', label: '5分钟均值', color: '#7dd3fc', points: this.history.load.five, emphasis: false },
+      { key: 'fifteen', label: '15分钟均值', color: '#c4b5fd', points: this.history.load.fifteen, emphasis: false }
+    ];
+    const primarySeries = loadHistory[0];
+    const allPoints = loadHistory.flatMap(series => series.points);
+    const maxLoad = Math.max(
+      1,
+      ...loadPercentValues,
+      ...allPoints.map(point => point.y)
+    );
+    const chartWidth = 560;
+    const chartHeight = 240;
+    const padding = { top: 16, right: 20, bottom: 34, left: 44 };
+    const plotWidth = chartWidth - padding.left - padding.right;
+    const plotHeight = chartHeight - padding.top - padding.bottom;
+    const pointCount = Math.max(...loadHistory.map(series => series.points.length), 1);
+    const yTicks = 4;
+
+    const buildPath = (points: { x: number; y: number }[]) => {
+      if (points.length === 0) {
+        return '';
       }
-    });
-    this.charts.clear();
 
-    this.initLoadChart();
+      return points.map((point, index) => {
+        const x = padding.left + (pointCount === 1 ? plotWidth / 2 : (index / (pointCount - 1)) * plotWidth);
+        const y = padding.top + plotHeight - (Math.min(point.y, maxLoad) / maxLoad) * plotHeight;
+        return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+      }).join(' ');
+    };
+
+    const buildAreaPath = (points: { x: number; y: number }[]) => {
+      if (points.length === 0) {
+        return '';
+      }
+
+      const linePath = buildPath(points);
+      const startX = padding.left + (pointCount === 1 ? plotWidth / 2 : 0);
+      const endX = padding.left + plotWidth;
+      const baselineY = padding.top + plotHeight;
+      return `${linePath} L ${endX.toFixed(1)} ${baselineY.toFixed(1)} L ${startX.toFixed(1)} ${baselineY.toFixed(1)} Z`;
+    };
+
+    const gridLines = Array.from({ length: yTicks + 1 }, (_, index) => {
+      const y = padding.top + (plotHeight / yTicks) * index;
+      const value = `${((maxLoad / yTicks) * (yTicks - index)).toFixed(0)}%`;
+      return `
+        <line x1="${padding.left}" y1="${y}" x2="${chartWidth - padding.right}" y2="${y}" class="load-chart-grid-line" />
+        <text x="${padding.left - 10}" y="${y + 4}" class="load-chart-axis-label">${value}</text>
+      `;
+    }).join('');
+
+    const latestLabels = this.renderLoadChartTimeLabels(pointCount, chartHeight, chartWidth, padding, plotWidth);
+
+    return `
+      <div class="load-trend-chart">
+        <div class="load-chart-summary">
+          ${loadHistory.map((series, index) => `
+            <div class="load-summary-item">
+              <span class="load-summary-dot" style="background:${series.color}"></span>
+              <span class="load-summary-label">${series.label}</span>
+              <span class="load-summary-value">${loadPercentValues[index].toFixed(1)}%</span>
+            </div>
+          `).join('')}
+        </div>
+        <svg viewBox="0 0 ${chartWidth} ${chartHeight}" class="load-chart-svg" preserveAspectRatio="none" aria-label="系统负载趋势图">
+          ${gridLines}
+          <line x1="${padding.left}" y1="${padding.top + plotHeight}" x2="${chartWidth - padding.right}" y2="${padding.top + plotHeight}" class="load-chart-axis-line" />
+          <defs>
+            <linearGradient id="loadPrimaryFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#4f8df7" stop-opacity="0.28" />
+              <stop offset="100%" stop-color="#4f8df7" stop-opacity="0.02" />
+            </linearGradient>
+          </defs>
+          <path d="${buildAreaPath(primarySeries.points)}" fill="url(#loadPrimaryFill)" stroke="none" />
+          ${loadHistory.map(series => `
+            <path
+              d="${buildPath(series.points)}"
+              fill="none"
+              stroke="${series.color}"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              opacity="${series.emphasis ? '1' : '0.7'}"
+            />
+          `).join('')}
+          ${primarySeries.points.length > 0 ? (() => {
+            const lastIndex = primarySeries.points.length - 1;
+            const x = padding.left + (pointCount === 1 ? plotWidth / 2 : (lastIndex / (pointCount - 1)) * plotWidth);
+            const y = padding.top + plotHeight - (Math.min(primarySeries.points[lastIndex].y, maxLoad) / maxLoad) * plotHeight;
+            return `
+              <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" class="load-chart-latest-point" />
+              <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="10" class="load-chart-latest-ring" />
+            `;
+          })() : ''}
+          ${latestLabels}
+        </svg>
+      </div>
+    `;
   }
 
-  private getThemeOptions() {
-    const isDark = this.currentTheme === 'dark';
-    return {
-      mode: isDark ? 'dark' : 'light',
-      textColor: isDark ? '#94a3b8' : '#475569',
-      gridColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-      dataLabelColor: isDark ? '#fff' : '#1e293b'
-    };
-  }
+  private renderLoadChartTimeLabels(
+    pointCount: number,
+    chartHeight: number,
+    chartWidth: number,
+    padding: { top: number; right: number; bottom: number; left: number },
+    plotWidth: number
+  ): string {
+    const labels = ['较早', '最近'];
+    const positions = pointCount <= 1
+      ? [padding.left + plotWidth / 2, padding.left + plotWidth / 2]
+      : [padding.left, chartWidth - padding.right];
 
-  private initLoadChart() {
-    const systemInfo = (this as any).currentSystemInfo;
-    if (!systemInfo) return;
-
-    const themeOpts = this.getThemeOptions();
-    const load = systemInfo.loadAverage.map((v: string) => parseFloat(v));
-    const options = {
-      series: [{ name: '负载', data: load }],
-      chart: { type: 'bar', height: '100%', fontFamily: 'inherit', background: 'transparent', toolbar: { show: false } },
-      colors: ['#8B5CF6'],
-      plotOptions: { bar: { borderRadius: 4, horizontal: false, columnWidth: '40%', distributed: true } },
-      xaxis: {
-        categories: ['1分钟', '5分钟', '15分钟'],
-        axisBorder: { show: false },
-        axisTicks: { show: false },
-        labels: { style: { colors: themeOpts.textColor } }
-      },
-      yaxis: { show: false },
-      grid: { show: false },
-      dataLabels: { enabled: true, style: { colors: [themeOpts.dataLabelColor] }, offsetY: -20 },
-      theme: { mode: themeOpts.mode },
-      legend: { show: false }
-    };
-    const chart = new ApexCharts(document.querySelector("#chart-load"), options);
-    chart.render();
-    this.charts.set('load', chart);
+    return labels.map((label, index) => `
+      <text
+        x="${positions[index]}"
+        y="${padding.top + (chartHeight - padding.top - padding.bottom) + 24}"
+        text-anchor="${index === 0 ? 'start' : 'end'}"
+        class="load-chart-axis-label"
+      >${label}</text>
+    `).join('');
   }
 
   private updateHistory(systemInfo: SystemInfo) {
@@ -308,6 +483,19 @@ export class DashboardRenderer {
     this.history.network.tx.push({ x: now, y: txSpeed });
     if (this.history.network.rx.length > 60) this.history.network.rx.shift();
     if (this.history.network.tx.length > 60) this.history.network.tx.shift();
+
+    const loadValues = (systemInfo.loadAverage || [])
+      .map((v: string) => parseFloat(v))
+      .filter((value: number) => Number.isFinite(value));
+    if (loadValues.length === 3) {
+      this.history.load.one.push({ x: now, y: this.normalizeLoadPercentage(loadValues[0], systemInfo.cpuInfo.cores) });
+      this.history.load.five.push({ x: now, y: this.normalizeLoadPercentage(loadValues[1], systemInfo.cpuInfo.cores) });
+      this.history.load.fifteen.push({ x: now, y: this.normalizeLoadPercentage(loadValues[2], systemInfo.cpuInfo.cores) });
+
+      if (this.history.load.one.length > 90) this.history.load.one.shift();
+      if (this.history.load.five.length > 90) this.history.load.five.shift();
+      if (this.history.load.fifteen.length > 90) this.history.load.fifteen.shift();
+    }
 
     // Store current system info for static charts
     (this as any).currentSystemInfo = systemInfo;
@@ -413,12 +601,25 @@ export class DashboardRenderer {
     });
   }
 
+  private normalizeLoadPercentage(load: number, cpuCores: number): number {
+    const cores = Number.isFinite(cpuCores) && cpuCores > 0 ? cpuCores : 1;
+    return (load / cores) * 100;
+  }
+
+  private escapeHtmlAttribute(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
   /**
    * 渲染指标卡片
    */
-  private renderMetricCard(title: string, value: string, unit: string, type: string): string {
+  private renderMetricCard(title: string, value: string, unit: string, type: string, id?: string): string {
     return `
-      <div class="metric-card ${type}">
+      <div class="metric-card ${type}" ${id ? `id="${id}"` : ''}>
         <div class="metric-header">
           <span class="metric-title">${title}</span>
         </div>
@@ -426,6 +627,49 @@ export class DashboardRenderer {
           <span class="metric-value">${value}</span>
           <span class="metric-unit">${unit}</span>
         </div>
+      </div>
+    `;
+  }
+
+  private updateMetricValue(id: string, value: string, unit: string): void {
+    const card = document.getElementById(id);
+    if (!card) {
+      return;
+    }
+
+    const valueEl = card.querySelector('.metric-value');
+    const unitEl = card.querySelector('.metric-unit');
+    if (valueEl) {
+      valueEl.textContent = value;
+    }
+    if (unitEl) {
+      unitEl.textContent = unit;
+    }
+  }
+
+  private renderSystemOverview(systemInfo: SystemInfo): string {
+    return `
+      <div class="info-item">
+        <span class="label">主机名</span>
+        <span class="value">${systemInfo.hostname}</span>
+      </div>
+      <div class="info-item">
+        <span class="label">运行时间</span>
+        <span class="value">${systemInfo.uptime}</span>
+      </div>
+      <div class="info-item">
+        <span class="label">CPU型号</span>
+        <span class="value" title="${systemInfo.cpuInfo.model}">
+          ${this.truncateText(systemInfo.cpuInfo.model, 20)}
+        </span>
+      </div>
+      <div class="info-item">
+        <span class="label">核心数</span>
+        <span class="value">${systemInfo.cpuInfo.cores} 核</span>
+      </div>
+      <div class="info-item">
+        <span class="label">进程数</span>
+        <span class="value">${systemInfo.processCount}</span>
       </div>
     `;
   }
@@ -524,6 +768,3 @@ export class DashboardRenderer {
     `;
   }
 }
-
-// Declare ApexCharts global
-declare var ApexCharts: any;

@@ -142,7 +142,7 @@ export class SSHManager {
     // 连接成功后，开始自动更新系统信息
     try {
       await this.systemInfoManager.fetchSystemInfo();
-      this.systemInfoManager.startAutoUpdate(30000); // 30秒更新一次
+      this.systemInfoManager.startAutoUpdate(3000); // 3秒更新一次
     } catch (error) {
       console.warn('⚠️ 获取系统信息失败，但SSH连接成功:', error);
     }
@@ -193,10 +193,18 @@ export class SSHManager {
     return this.systemInfoManager.getSystemInfo();
   }
 
+  async getDetailedSystemInfo(): Promise<any> {
+    return this.systemInfoManager.getDetailedSystemInfo();
+  }
+
+  clearSystemInfoCache(): void {
+    this.systemInfoManager.clearCache();
+  }
+
   /**
    * 开始自动更新系统信息
    */
-  startSystemInfoAutoUpdate(intervalMs: number = 30000): void {
+  startSystemInfoAutoUpdate(intervalMs: number = 3000): void {
     this.systemInfoManager.startAutoUpdate(intervalMs);
   }
 

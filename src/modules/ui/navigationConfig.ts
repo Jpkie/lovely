@@ -10,6 +10,8 @@ export type IconKey =
   | 'ApplicationMenu'
   | 'FolderOpen'
   | 'Code'
+  | 'PayloadSkull'
+  | 'AIAssistantChat'
   | 'Rocket'
   | 'Data'
   | 'Log'
@@ -100,14 +102,14 @@ const ALL_NAV_ITEMS: NavigationItem[] = [
   },
   {
     id: 'ai-chat',
-    title: 'AI聊天',
+    title: 'AI助手',
     description: 'AI智能助手辅助分析',
-    iconKey: 'Robot',
+    iconKey: 'AIAssistantChat',
     visibleInModes: ['classic']
   },
   {
     id: 'ai-command-center',
-    title: 'AI命令中心',
+    title: 'AI指挥台',
     description: '智能任务编排与执行',
     iconKey: 'Robot',
     visibleInModes: ['classic', 'ai']
@@ -116,15 +118,8 @@ const ALL_NAV_ITEMS: NavigationItem[] = [
     id: 'payloader',
     title: 'Payload工具',
     description: '安全测试Payload生成',
-    iconKey: 'Code',
+    iconKey: 'PayloadSkull',
     visibleInModes: ['classic']
-  },
-  {
-    id: 'ssh-terminal',
-    title: 'SSH终端',
-    description: '远程SSH终端连接',
-    iconKey: 'Code',
-    visibleInModes: ['classic', 'ai']
   }
 ];
 
@@ -139,14 +134,12 @@ const NAV_ORDER: Record<UIMode, AppPage[]> = {
     'log-analysis',
     'ai-chat',
     'ai-command-center',
-    'payloader',
-    'ssh-terminal'
+    'payloader'
   ],
   'ai': [
     'ai-command-center',
     'quick-detection',
     'log-analysis',
-    'ssh-terminal',
     'remote-operations',
     'emergency-commands',
     'system-info',

@@ -657,8 +657,6 @@ export class ModernUIRenderer {
         return this.renderAIChatPage();
       case 'payloader':
         return this.renderPayloaderPage();
-      case 'settings':
-        return this.renderSettingsPage();
       case 'dashboard':
       default:
         return this.renderDashboard();

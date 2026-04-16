@@ -9,6 +9,7 @@ import { aiService, AIProvider } from '../ai/aiService';
 export class SettingsPageManager {
   private settingsManager: SettingsManager;
   private systemFonts: string[] = [];
+  private currentScope: ParentNode | null = null;
 
   // 预设提供商（不可删除）
   private readonly presetProviders = ['openai', 'deepseek', 'claude', 'custom'];
@@ -24,8 +25,19 @@ export class SettingsPageManager {
     try {
       console.log('🔧 初始化设置页面...');
 
+      const scope = (document.getElementById('settings-overlay-container') || document) as ParentNode;
+      const overlay = document.getElementById('settings-overlay-container');
+      if (overlay?.dataset.settingsInitialized === '1' && this.currentScope === scope) {
+        this.loadSettingsToForm();
+        return;
+      }
+      this.currentScope = scope;
+      if (overlay) {
+        overlay.dataset.settingsInitialized = '1';
+      }
+
       // 绑定事件监听器
-      this.bindEventListeners();
+      this.bindEventListeners(scope);
       (window as any).switchSettingsTab = (tabName: 'basic' | 'ai') => {
         this.switchTab(tabName);
       };
@@ -125,9 +137,9 @@ export class SettingsPageManager {
   /**
    * 绑定事件监听器
    */
-  private bindEventListeners(): void {
+  private bindEventListeners(scope: ParentNode = document): void {
     // 标签页切换
-    document.querySelectorAll('.settings-tab').forEach(tab => {
+    scope.querySelectorAll('.settings-tab').forEach(tab => {
       tab.addEventListener('click', (e) => {
         const target = e.currentTarget as HTMLElement;
         const tabName = target.getAttribute('data-tab') as 'basic' | 'ai';
@@ -138,7 +150,7 @@ export class SettingsPageManager {
     });
 
     // 保存设置按钮
-    const saveButton = document.getElementById('save-settings');
+    const saveButton = scope.querySelector('#save-settings');
     if (saveButton) {
       saveButton.addEventListener('click', () => {
         this.saveSettings();
@@ -146,7 +158,7 @@ export class SettingsPageManager {
     }
 
     // 重置设置按钮
-    const resetButton = document.getElementById('reset-settings');
+    const resetButton = scope.querySelector('#reset-settings');
     if (resetButton) {
       resetButton.addEventListener('click', () => {
         this.resetSettings();
@@ -154,7 +166,7 @@ export class SettingsPageManager {
     }
 
     // 全局字体变化监听
-    const globalFontSelect = document.getElementById('global-font') as HTMLSelectElement;
+    const globalFontSelect = scope.querySelector('#global-font') as HTMLSelectElement | null;
     if (globalFontSelect) {
       globalFontSelect.addEventListener('change', () => {
         this.previewGlobalFont();
@@ -162,8 +174,8 @@ export class SettingsPageManager {
     }
 
     // 全局字体大小滑块监听
-    const globalFontSizeSlider = document.getElementById('global-font-size') as HTMLInputElement;
-    const fontSizeValue = document.getElementById('font-size-value');
+    const globalFontSizeSlider = scope.querySelector('#global-font-size') as HTMLInputElement | null;
+    const fontSizeValue = scope.querySelector('#font-size-value');
     if (globalFontSizeSlider && fontSizeValue) {
       globalFontSizeSlider.addEventListener('input', () => {
         const size = globalFontSizeSlider.value;
@@ -173,7 +185,7 @@ export class SettingsPageManager {
     }
 
     // AI提供商切换监听
-    const aiProviderSelect = document.getElementById('ai-provider') as HTMLSelectElement;
+    const aiProviderSelect = scope.querySelector('#ai-provider') as HTMLSelectElement | null;
     if (aiProviderSelect) {
       aiProviderSelect.addEventListener('change', () => {
         this.switchAIProvider();
@@ -181,7 +193,7 @@ export class SettingsPageManager {
     }
 
     // 代理勾选框监听
-    const useProxyCheckbox = document.getElementById('ai-use-proxy') as HTMLInputElement;
+    const useProxyCheckbox = scope.querySelector('#ai-use-proxy') as HTMLInputElement | null;
     if (useProxyCheckbox) {
       useProxyCheckbox.addEventListener('change', () => {
         this.toggleProxySettings();
@@ -189,7 +201,7 @@ export class SettingsPageManager {
     }
 
     // AI连接测试按钮
-    const testAIButton = document.getElementById('test-ai-connection');
+    const testAIButton = scope.querySelector('#test-ai-connection');
     if (testAIButton) {
       testAIButton.addEventListener('click', () => {
         this.testAIConnection();
@@ -197,7 +209,7 @@ export class SettingsPageManager {
     }
 
     // 新增AI提供商按钮
-    const addProviderButton = document.getElementById('add-ai-provider');
+    const addProviderButton = scope.querySelector('#add-ai-provider');
     if (addProviderButton) {
       addProviderButton.addEventListener('click', () => {
         this.showAddProviderModal();
@@ -205,7 +217,7 @@ export class SettingsPageManager {
     }
 
     // 删除AI提供商按钮
-    const deleteProviderButton = document.getElementById('delete-ai-provider');
+    const deleteProviderButton = scope.querySelector('#delete-ai-provider');
     if (deleteProviderButton) {
       deleteProviderButton.addEventListener('click', () => {
         this.deleteCurrentProvider();
@@ -213,9 +225,9 @@ export class SettingsPageManager {
     }
 
     // 新增提供商弹窗相关事件
-    const closeModalButton = document.getElementById('close-add-provider-modal');
-    const cancelButton = document.getElementById('cancel-add-provider');
-    const addProviderForm = document.getElementById('add-provider-form');
+    const closeModalButton = scope.querySelector('#close-add-provider-modal');
+    const cancelButton = scope.querySelector('#cancel-add-provider');
+    const addProviderForm = scope.querySelector('#add-provider-form');
 
     if (closeModalButton) {
       closeModalButton.addEventListener('click', () => {
@@ -237,7 +249,7 @@ export class SettingsPageManager {
     }
 
     // 点击弹窗背景关闭
-    const addProviderModal = document.getElementById('add-provider-modal');
+    const addProviderModal = scope.querySelector('#add-provider-modal');
     if (addProviderModal) {
       addProviderModal.addEventListener('click', (e) => {
         if (e.target === addProviderModal) {
@@ -705,22 +717,12 @@ export class SettingsPageManager {
     messageDiv.textContent = message;
 
     // 添加动画样式
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes slideIn {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-      }
-    `;
-    document.head.appendChild(style);
-
     // 添加到页面
     document.body.appendChild(messageDiv);
 
     // 3秒后自动移除
     setTimeout(() => {
       messageDiv.remove();
-      style.remove();
     }, 3000);
   }
 

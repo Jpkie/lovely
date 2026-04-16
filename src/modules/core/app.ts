@@ -28,7 +28,7 @@ export interface AppState {
   currentServer?: string; // 保留向后兼容
   serverInfo?: ServerInfo; // 新增详细服务器信息
   loading: boolean;
-  currentPage: 'dashboard' | 'system-info' | 'ssh-terminal' | 'remote-operations' | 'emergency-commands' | 'log-analysis' | 'settings' | 'quick-detection' | 'database' | 'payloader' | 'ai-chat';
+  currentPage: 'dashboard' | 'system-info' | 'ssh-terminal' | 'remote-operations' | 'emergency-commands' | 'log-analysis' | 'quick-detection' | 'database' | 'payloader' | 'ai-chat';
 }
 
 export class LovelyResApp {
@@ -233,9 +233,14 @@ export class LovelyResApp {
       if (navItem && navItem.getAttribute('data-nav-id')) {
         const navId = navItem.getAttribute('data-nav-id');
         if (navId) {
-            this.stateManager.setCurrentPage(navId as any);
-            this.modernUIRenderer.updateState(this.stateManager.getState());
-            this.render(); // 重新渲染以更新视图
+            if (typeof (window as any).switchPage === 'function') {
+              (window as any).switchPage(navId);
+            } else {
+              this.stateManager.setCurrentPage(navId as any);
+              this.modernUIRenderer.updateState(this.stateManager.getState());
+              this.render();
+            }
+            return;
         }
       }
 
@@ -301,9 +306,7 @@ export class LovelyResApp {
     // 菜单操作
     (window as any).handleUserMenuAction = (action: string) => {
         if (action === 'settings') {
-            this.stateManager.setCurrentPage('settings');
-            this.modernUIRenderer.updateState(this.stateManager.getState());
-            this.render();
+            (window as any).showSettingsOverlay?.();
         }
     };
   }

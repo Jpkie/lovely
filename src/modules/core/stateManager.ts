@@ -103,7 +103,7 @@ export class StateManager {
   /**
    * 设置当前页面
    */
-  setCurrentPage(page: 'dashboard' | 'system-info' | 'ssh-terminal' | 'remote-operations' | 'emergency-commands' | 'log-analysis' | 'settings' | 'quick-detection' | 'database' | 'payloader' | 'ai-chat'): void {
+  setCurrentPage(page: 'dashboard' | 'system-info' | 'ssh-terminal' | 'remote-operations' | 'emergency-commands' | 'log-analysis' | 'quick-detection' | 'database' | 'payloader' | 'ai-chat'): void {
     this.setState({ currentPage: page });
   }
 

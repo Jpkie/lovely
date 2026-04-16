@@ -1,25 +1,27 @@
-﻿/**
- * Tauri invoke 适配�? * 
- * 此模块提供了一个与 Tauri invoke 完全兼容�?API 接口�? * 但底层使�?HTTP 请求调用 Python FastAPI 后端�? * 
- * 使用方式�? *   将前端代码中�?`import { invoke } from '@tauri-apps/api/core'`
- *   替换�?`import { invoke } from '../config/invoke-adapter'`
- * 
- * 这样无需修改任何调用代码，即可切换到 Python 后端�? */
+/**
+ * Tauri invoke 适配器。
+ *
+ * 该模块提供与 Tauri `invoke` 兼容的接口，但底层通过 HTTP 请求调用
+ * Python FastAPI 后端。
+ */
 
 import pythonApi from './python-api.config';
 
 /**
- * 兼容 Tauri invoke 的适配器函�? * 
- * @param cmd - Tauri 命令名称（与 Rust 后端�?#[tauri::command] 函数名对应）
- * @param args - 命令参数
- * @returns Promise<any> - 与原 Tauri invoke 相同的返回�? */
+ * 兼容 Tauri `invoke` 的适配函数。
+ *
+ * @param cmd Tauri 命令名称
+ * @param args 命令参数
+ * @returns 与原 Tauri invoke 语义一致的结果
+ */
 export async function invoke(cmd: string, args?: Record<string, any>): Promise<any> {
   const authType = args?.authType ?? args?.auth_type;
   const keyPath = args?.keyPath ?? args?.key_path;
   const keyPassphrase = args?.keyPassphrase ?? args?.key_passphrase;
   const certificatePath = args?.certificatePath ?? args?.certificate_path;
   const encryptedPassword = args?.encryptedPassword ?? args?.encrypted_password;
-  // �?Tauri 命令名映射到 Python API 方法
+
+  // 将 Tauri 命令名映射到 Python API 方法
   const commandMap: Record<string, (...params: any[]) => Promise<any>> = {
     // 窗口控制
     minimize_window: () => pythonApi.minimizeWindow(),
@@ -90,7 +92,7 @@ export async function invoke(cmd: string, args?: Record<string, any>): Promise<a
     sftp_file_analysis: () => pythonApi.sftpFileAnalysis(args?.path),
     sftp_file_analysis_independent: () => pythonApi.sftpFileAnalysisIndependent(args?.path),
 
-    // Bash 环境 & 命令补全
+    // Bash 环境和命令补全
     get_bash_environment_info: () => pythonApi.getBashEnvironmentInfo(),
     get_command_completion: () => pythonApi.getCommandCompletion(args?.input),
 
@@ -149,7 +151,7 @@ export async function invoke(cmd: string, args?: Record<string, any>): Promise<a
     list_log_files: () => pythonApi.listLogFiles(),
     get_log_file_info: () => pythonApi.getLogFileInfo(args?.log_path),
 
-    // 加密 & 设备信息
+    // 加密和设备信息
     get_rsa_public_key: () => pythonApi.getRsaPublicKey(),
     get_device_uuid: () => pythonApi.getDeviceUuid(),
   };
@@ -159,11 +161,8 @@ export async function invoke(cmd: string, args?: Record<string, any>): Promise<a
     return handler();
   }
 
-  // 未找到映射的命令
   console.warn(`[invoke-adapter] 未映射的命令: ${cmd}`);
   throw new Error(`未映射的命令: ${cmd}`);
 }
 
 export default invoke;
-
-

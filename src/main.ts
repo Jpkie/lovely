@@ -2478,9 +2478,10 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
   (window as any).switchPage = (pageId: string) => {
     console.log('🔄 切换页面:', pageId);
 
-    // 重置远程操作页面初始化状态
-    if (pageId !== 'remote-operations') {
-      remoteOperationsPageInitialized = false;
+    if (pageId === 'settings') {
+      console.log('⚙️ 设置页统一使用覆盖层');
+      (window as any).showSettingsOverlay?.();
+      return;
     }
 
     // 更新导航项状态
@@ -2508,12 +2509,6 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
         setTimeout(() => {
           (window as any).refreshLogAnalysis();
         }, 200);
-      } else if (pageId === 'settings') {
-        console.log('⚙️ [PageSwitch] 初始化设置页面');
-        // 初始化设置页面
-        setTimeout(() => {
-          settingsPageManager.initialize();
-        }, 100);
       } else if (pageId === 'ai-chat') {
         setTimeout(() => {
           (window as any).initAIChatPage?.();
@@ -3044,10 +3039,19 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
     const tbody = document.getElementById('processes-table-body');
     if (!tbody) return;
 
-    // 禁用进程表格区域的默认右键菜单
-    tbody.addEventListener('contextmenu', (e) => {
+    tbody.oncontextmenu = (e: MouseEvent) => {
       e.preventDefault();
-    });
+      const row = (e.target as HTMLElement | null)?.closest('tr[data-pid]') as HTMLElement | null;
+      if (!row) return;
+
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+
+      const pid = row.getAttribute('data-pid');
+      if (pid) {
+        processContextMenu.showContextMenu(e.clientX, e.clientY, pid);
+      }
+    };
 
     if (!processes || processes.length === 0) {
       tbody.innerHTML = `
@@ -3084,23 +3088,6 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
       </tr>
     `).join('');
 
-    // 添加右键事件监听
-    tbody.querySelectorAll('tr[data-pid]').forEach(row => {
-      row.addEventListener('contextmenu', (e: Event) => {
-        e.preventDefault();
-        const mouseEvent = e as MouseEvent;
-
-        // 清除其他行的选中状态
-        tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
-        // 选中当前行
-        (row as HTMLElement).classList.add('selected');
-
-        const pid = (row as HTMLElement).getAttribute('data-pid');
-        if (pid) {
-          processContextMenu.showContextMenu(mouseEvent.clientX, mouseEvent.clientY, pid);
-        }
-      });
-    });
   };
 
   // 更新网络表格
@@ -3108,10 +3095,23 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
     const tbody = document.getElementById('network-table-body');
     if (!tbody) return;
 
-    // 禁用网络表格区域的默认右键菜单
-    tbody.addEventListener('contextmenu', (e) => {
+    tbody.oncontextmenu = (e: MouseEvent) => {
       e.preventDefault();
-    });
+      const row = (e.target as HTMLElement | null)?.closest('tr[data-protocol]') as HTMLElement | null;
+      if (!row) return;
+
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+
+      networkContextMenu.showContextMenu(e.clientX, e.clientY, {
+        protocol: row.getAttribute('data-protocol') || '',
+        localAddress: row.getAttribute('data-local') || '',
+        foreignAddress: row.getAttribute('data-foreign') || '',
+        state: row.getAttribute('data-state') || '',
+        pid: row.getAttribute('data-pid') || '-',
+        process: row.getAttribute('data-process') || ''
+      });
+    };
 
     if (!networkDetails || networkDetails.length === 0) {
       tbody.innerHTML = `
@@ -3138,40 +3138,26 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
       </tr>
     `).join('');
 
-    // 添加右键事件监听
-    tbody.querySelectorAll('tr[data-protocol]').forEach(row => {
-      row.addEventListener('contextmenu', (e: Event) => {
-        e.preventDefault();
-        const mouseEvent = e as MouseEvent;
-
-        // 清除其他行的选中状态
-        tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
-        // 选中当前行
-        (row as HTMLElement).classList.add('selected');
-
-        const protocol = (row as HTMLElement).getAttribute('data-protocol') || '';
-        const localAddress = (row as HTMLElement).getAttribute('data-local') || '';
-        const foreignAddress = (row as HTMLElement).getAttribute('data-foreign') || '';
-        const state = (row as HTMLElement).getAttribute('data-state') || '';
-        const pid = (row as HTMLElement).getAttribute('data-pid') || '-';
-        const process = (row as HTMLElement).getAttribute('data-process') || '';
-
-        networkContextMenu.showContextMenu(mouseEvent.clientX, mouseEvent.clientY, {
-          protocol,
-          localAddress,
-          foreignAddress,
-          state,
-          pid,
-          process
-        });
-      });
-    });
   };
 
   // 更新系统服务表格
   (window as any).updateServicesTable = (services: any[]) => {
     const tbody = document.getElementById('services-table-body');
     if (!tbody) return;
+
+    tbody.oncontextmenu = (e: MouseEvent) => {
+      e.preventDefault();
+      const row = (e.target as HTMLElement | null)?.closest('tr[data-service-name]') as HTMLElement | null;
+      if (!row) return;
+
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+
+      const serviceName = row.getAttribute('data-service-name');
+      if (serviceName) {
+        serviceContextMenu.showContextMenu(e.clientX, e.clientY, serviceName);
+      }
+    };
 
     if (!services || services.length === 0) {
       tbody.innerHTML = `
@@ -3210,29 +3196,26 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
       </tr>
     `).join('');
 
-    // 添加右键菜单事件监听器
-    tbody.querySelectorAll('tr[data-service-name]').forEach(row => {
-      row.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        const mouseEvent = e as MouseEvent;
-
-        // 清除其他行的选中状态
-        tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
-        // 选中当前行
-        (row as HTMLElement).classList.add('selected');
-
-        const serviceName = (row as HTMLElement).getAttribute('data-service-name');
-        if (serviceName) {
-          serviceContextMenu.showContextMenu(mouseEvent.clientX, mouseEvent.clientY, serviceName);
-        }
-      });
-    });
   };
 
   // 更新用户表格
   (window as any).updateUsersTable = (users: any[]) => {
     const tbody = document.getElementById('users-table-body');
     if (!tbody) return;
+
+    tbody.oncontextmenu = (e: MouseEvent) => {
+      e.preventDefault();
+      const row = (e.target as HTMLElement | null)?.closest('tr[data-username]') as HTMLElement | null;
+      if (!row) return;
+
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+
+      const username = row.getAttribute('data-username');
+      if (username) {
+        userContextMenu.showContextMenu(e.clientX, e.clientY, username);
+      }
+    };
 
     if (!users || users.length === 0) {
       tbody.innerHTML = `
@@ -3268,29 +3251,29 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
       </tr>
     `).join('');
 
-    // 添加右键菜单事件监听器
-    tbody.querySelectorAll('tr[data-username]').forEach(row => {
-      row.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        const mouseEvent = e as MouseEvent;
-
-        // 清除其他行的选中状态
-        tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
-        // 选中当前行
-        (row as HTMLElement).classList.add('selected');
-
-        const username = (row as HTMLElement).getAttribute('data-username');
-        if (username) {
-          userContextMenu.showContextMenu(mouseEvent.clientX, mouseEvent.clientY, username);
-        }
-      });
-    });
   };
 
   // 更新自启动表格
   (window as any).updateAutostartTable = (autostart: any[]) => {
     const tbody = document.getElementById('autostart-table-body');
     if (!tbody) return;
+
+    tbody.oncontextmenu = (e: MouseEvent) => {
+      e.preventDefault();
+      const row = (e.target as HTMLElement | null)?.closest('tr[data-startup-name]') as HTMLElement | null;
+      if (!row) return;
+
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+
+      const name = row.getAttribute('data-startup-name') || '';
+      const type = row.getAttribute('data-startup-type') || '';
+      const path = row.getAttribute('data-startup-path') || '';
+      const command = row.getAttribute('data-startup-command') || '';
+      if (name) {
+        startupContextMenu.showContextMenu(e.clientX, e.clientY, { name, type, path, command });
+      }
+    };
 
     if (!autostart || autostart.length === 0) {
       tbody.innerHTML = `
@@ -3319,38 +3302,30 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
       </tr>
     `).join('');
 
-    // 添加右键菜单事件监听器
-    tbody.querySelectorAll('tr[data-startup-name]').forEach(row => {
-      row.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        const mouseEvent = e as MouseEvent;
-
-        // 清除其他行的选中状态
-        tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
-        // 选中当前行
-        (row as HTMLElement).classList.add('selected');
-
-        const name = (row as HTMLElement).getAttribute('data-startup-name') || '';
-        const type = (row as HTMLElement).getAttribute('data-startup-type') || '';
-        const path = (row as HTMLElement).getAttribute('data-startup-path') || '';
-        const command = (row as HTMLElement).getAttribute('data-startup-command') || '';
-
-        if (name) {
-          startupContextMenu.showContextMenu(mouseEvent.clientX, mouseEvent.clientY, {
-            name,
-            type,
-            path,
-            command
-          });
-        }
-      });
-    });
   };
 
   // 更新计划任务表格
   (window as any).updateCronTable = (cronJobs: any[]) => {
     const tbody = document.getElementById('cron-table-body');
     if (!tbody) return;
+
+    tbody.oncontextmenu = (e: MouseEvent) => {
+      e.preventDefault();
+      const row = (e.target as HTMLElement | null)?.closest('tr[data-cron-user]') as HTMLElement | null;
+      if (!row) return;
+
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+
+      const user = row.getAttribute('data-cron-user') || '';
+      const schedule = row.getAttribute('data-cron-schedule') || '';
+      const command = row.getAttribute('data-cron-command') || '';
+      const source = row.getAttribute('data-cron-source') || '';
+
+      if (user && command) {
+        cronContextMenu.showContextMenu(e.clientX, e.clientY, { user, schedule, command, source });
+      }
+    };
 
     if (!cronJobs || cronJobs.length === 0) {
       tbody.innerHTML = `
@@ -3374,38 +3349,39 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
       </tr>
     `).join('');
 
-    // 添加右键菜单事件监听器
-    tbody.querySelectorAll('tr[data-cron-user]').forEach(row => {
-      row.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        const mouseEvent = e as MouseEvent;
-
-        // 清除其他行的选中状态
-        tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
-        // 选中当前行
-        (row as HTMLElement).classList.add('selected');
-
-        const user = (row as HTMLElement).getAttribute('data-cron-user') || '';
-        const schedule = (row as HTMLElement).getAttribute('data-cron-schedule') || '';
-        const command = (row as HTMLElement).getAttribute('data-cron-command') || '';
-        const source = (row as HTMLElement).getAttribute('data-cron-source') || '';
-
-        if (user && command) {
-          cronContextMenu.showContextMenu(mouseEvent.clientX, mouseEvent.clientY, {
-            user,
-            schedule,
-            command,
-            source
-          });
-        }
-      });
-    });
   };
 
   // 更新防火墙表格
   (window as any).updateFirewallTable = (firewallRules: any[]) => {
     const tbody = document.getElementById('firewall-table-body');
     if (!tbody) return;
+
+    tbody.oncontextmenu = (e: MouseEvent) => {
+      e.preventDefault();
+      const row = (e.target as HTMLElement | null)?.closest('tr[data-chain]') as HTMLElement | null;
+      if (!row) return;
+
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+
+      const chain = row.getAttribute('data-chain') || '';
+      const target = row.getAttribute('data-target') || '';
+      const protocol = row.getAttribute('data-protocol') || '';
+      const source = row.getAttribute('data-source') || '';
+      const destination = row.getAttribute('data-destination') || '';
+      const options = row.getAttribute('data-options') || '';
+
+      if (chain) {
+        firewallContextMenu.showContextMenu(e.clientX, e.clientY, {
+          chain,
+          target,
+          protocol,
+          source,
+          destination,
+          options
+        });
+      }
+    };
 
     if (!firewallRules || firewallRules.length === 0) {
       tbody.innerHTML = `
@@ -3432,36 +3408,6 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
       </tr>
     `).join('');
 
-    // 添加右键菜单事件监听器
-    tbody.querySelectorAll('tr[data-chain]').forEach(row => {
-      row.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        const mouseEvent = e as MouseEvent;
-
-        // 清除其他行的选中状态
-        tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
-        // 选中当前行
-        (row as HTMLElement).classList.add('selected');
-
-        const chain = (row as HTMLElement).getAttribute('data-chain') || '';
-        const target = (row as HTMLElement).getAttribute('data-target') || '';
-        const protocol = (row as HTMLElement).getAttribute('data-protocol') || '';
-        const source = (row as HTMLElement).getAttribute('data-source') || '';
-        const destination = (row as HTMLElement).getAttribute('data-destination') || '';
-        const options = (row as HTMLElement).getAttribute('data-options') || '';
-
-        if (chain) {
-          firewallContextMenu.showContextMenu(mouseEvent.clientX, mouseEvent.clientY, {
-            chain,
-            target,
-            protocol,
-            source,
-            destination,
-            options
-          });
-        }
-      });
-    });
   };
 
   // 仪表盘自动刷新相关函数
@@ -3504,20 +3450,21 @@ function setupGlobalModalFunctions(app: LovelyResApp) {
 
 // 页面特定的初始化函数
 let remoteOperationsPageInitialized = false;
+let remoteOperationsSftpListenerBound = false;
 (window as any).initRemoteOperationsPage = async function () {
-  if (remoteOperationsPageInitialized) {
-    console.log('⏭️ 远程操作页面已初始化，跳过重复初始化');
-    return;
+  const firstInitialization = !remoteOperationsPageInitialized;
+  if (firstInitialization) {
+    console.log('🔧 初始化远程操作页面');
+    remoteOperationsPageInitialized = true;
+  } else {
+    console.log('🔄 刷新远程操作页面状态');
   }
-
-  console.log('🔧 初始化远程操作页面');
-  remoteOperationsPageInitialized = true;
 
   // 初始化远程操作管理器
   await remoteOperationsManager.initialize();
 
   // 检查统一SSH连接管理器的连接状态
-  console.log('� 检查SSH连接状态...');
+  console.log('🔍 检查SSH连接状态...');
   const backendStatus = await sshConnectionManager.checkConnectionStatus();
   console.log('🔍 后端返回的连接状态:', backendStatus);
 
@@ -3564,26 +3511,29 @@ let remoteOperationsPageInitialized = false;
     } catch { }
   }, 0);
 
-  // 添加 SFTP 路径变化监听器
-  sftpManager.addListener((_files, path) => {
-    // 更新路径输入框
-    const pathInput = document.getElementById('sftp-path-input') as HTMLInputElement;
-    if (pathInput) {
-      pathInput.value = path;
-    }
+  if (!remoteOperationsSftpListenerBound) {
+    remoteOperationsSftpListenerBound = true;
+    // 添加 SFTP 路径变化监听器
+    sftpManager.addListener((_files, path) => {
+      // 更新路径输入框
+      const pathInput = document.getElementById('sftp-path-input') as HTMLInputElement;
+      if (pathInput) {
+        pathInput.value = path;
+      }
 
-    // 更新文件列表
-    const sftpFileList = document.getElementById('sftp-file-list');
-    if (sftpFileList) {
-      sftpFileList.innerHTML = sftpManager.renderFileListHTML();
-    }
+      // 更新文件列表
+      const sftpFileList = document.getElementById('sftp-file-list');
+      if (sftpFileList) {
+        sftpFileList.innerHTML = sftpManager.renderFileListHTML();
+      }
 
-    // 更新排序下拉框的选中状态
-    const sortModeSelect = document.getElementById('sftp-sort-mode') as HTMLSelectElement;
-    if (sortModeSelect) {
-      sortModeSelect.value = sftpManager.getSortMode();
-    }
-  });
+      // 更新排序下拉框的选中状态
+      const sortModeSelect = document.getElementById('sftp-sort-mode') as HTMLSelectElement;
+      if (sortModeSelect) {
+        sortModeSelect.value = sftpManager.getSortMode();
+      }
+    });
+  }
 
 };
 
@@ -3597,6 +3547,11 @@ let remoteOperationsPageInitialized = false;
  */
 (window as any).showSettingsOverlay = function () {
   console.log('🔧 显示设置覆盖层');
+
+  const existingOverlay = document.getElementById('settings-overlay-container');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
 
   // 获取现代UI渲染器
   const app = (window as any).app;

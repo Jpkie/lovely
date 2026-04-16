@@ -74,13 +74,17 @@ def init_state():
 
 def get_ssh_manager() -> SSHManager:
     if _ssh_manager is None:
-        raise HTTPException(status_code=500, detail="SSH管理器未初始化")
+        init_state()
+    if _ssh_manager is None:
+        raise HTTPException(status_code=500, detail="SSH管理器初始化失败")
     return _ssh_manager
 
 
 def get_connection_manager() -> SSHConnectionManager:
     if _ssh_connection_manager is None:
-        raise HTTPException(status_code=500, detail="SSH连接管理器未初始化")
+        init_state()
+    if _ssh_connection_manager is None:
+        raise HTTPException(status_code=500, detail="SSH连接管理器初始化失败")
     return _ssh_connection_manager
 
 
@@ -150,6 +154,14 @@ class SaveTempFileRequest(BaseModel):
 class DockerActionRequest(BaseModel):
     container_id: str
     action: str
+
+
+class DockerLogsOptions(BaseModel):
+    tail: Optional[int] = None
+    since: Optional[str] = None
+    until: Optional[str] = None
+    timestamps: bool = False
+    follow: bool = False
 
 
 class DockerLogsRequest(BaseModel):
@@ -511,8 +523,8 @@ async def ssh_connect_with_auth(req: ConnectWithAuthRequest):
 @router.post("/ssh/test-connection")
 async def ssh_test_connection(req: ConnectWithAuthRequest):
     """测试 SSH 连接"""
-    ssh = get_ssh_manager()
     try:
+        ssh = get_ssh_manager()
         await ssh.connect(
             host=req.host,
             port=req.port,
@@ -523,8 +535,12 @@ async def ssh_test_connection(req: ConnectWithAuthRequest):
         )
         await ssh.disconnect()
         return {"success": True}
-    except Exception:
-        return {"success": False}
+    except HTTPException:
+        raise
+    except asyncssh.Error as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SSH 测试连接失败: {e}") from e
 
 
 @router.post("/ssh/execute-command")

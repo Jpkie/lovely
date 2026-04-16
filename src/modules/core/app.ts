@@ -166,11 +166,12 @@ export class LovelyResApp {
   render(): void {
     const app = document.getElementById('app');
     if (app) {
+      const hideSidebar = this.modernUIRenderer.shouldHideSidebar();
       app.innerHTML = `
         <div class="app-layout">
           ${this.modernUIRenderer.renderTitleBar()}
           <div class="main-container">
-            ${this.modernUIRenderer.renderSidebar()}
+            ${hideSidebar ? '' : this.modernUIRenderer.renderSidebar()}
             ${this.modernUIRenderer.renderMainWorkspace()}
           </div>
           ${this.modernUIRenderer.renderStatusBar()}
@@ -342,6 +343,9 @@ export class LovelyResApp {
       // 连接到第一个配置的服务器
       await this.sshManager.connect(connections[0].id);
       this.stateManager.setConnected(true, connections[0].name);
+      // 连接成功后自动跳转到 AI 指挥台
+      this.stateManager.setCurrentPage('ai-command-center');
+      this.render();
       this.showMessage('SSH连接成功', 'success');
     } catch (error) {
       console.error('SSH连接失败:', error);

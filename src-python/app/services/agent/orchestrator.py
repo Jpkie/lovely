@@ -5,12 +5,13 @@
   - 持有 skill_registry、tool_registry、planner、executor
   - run() 方法完成: 解析技能 → 生成计划 → 执行计划 → 收集结果
 
-执行流程（run 方法）:
+新版执行流程（run 方法）:
   1. _parse_skills: 解析任务匹配的 skills
   2. _build_context: 构建 SSH 执行上下文
-  3. planner.plan(): 生成执行计划
-  4. executor.execute_plan(): 按计划执行工具链（支持失败重规划）
-  5. 组装 FinalReport: plan / traces / final / raw_summary
+  3. planner.plan_calls(): 输出 PlannerOutput(calls=[SkillCall(skill, args)])
+  4. 对每个 call 调用 skill.build_steps(args, context) 动态生成 PlanStep
+  5. executor.execute_plan(): 按计划执行工具链（支持失败重规划）
+  6. 组装 FinalReport: plan / traces / final / raw_summary
 
 tool_registry 注入:
   - /agent/run 传入 runtime_registry（合并了 internal + MCP）
@@ -37,7 +38,7 @@ from .schemas import (
     AgentFinalResponse,
 )
 from .skills import get_default_skill_registry, SkillRegistry
-from .planner import BasePlanner, PlannerConfig, create_planner
+from .planner import BasePlanner, PlannerConfig, create_planner, PlannerOutput
 from .executor import Executor, ExecutionResult, ExecutionStatus, StepExecution
 from .tool_registry import ToolRegistry, get_default_registry
 from .context_builder import (
@@ -285,33 +286,126 @@ class AgentOrchestrator:
         )
         replan_count = 0
 
-        plan = await self.planner.plan(request, skills, context)
+        # ── 新流程: planner 输出 calls → build_steps 动态生成 PlanStep → executor 执行 ──
+        try:
+            # 尝试使用新版 plan_calls 接口
+            planner_output: PlannerOutput = await self.planner.plan_calls(request, skills, context)
+        except (AttributeError, TypeError):
+            # 兼容旧版 planner（未实现 plan_calls 时回退到 plan）
+            plan = await self.planner.plan(request, skills, context)
+            plan_dict = self._serialize_plan(plan)
+            report.plan = plan_dict
+            return await self._execute_plan_and_build_report(
+                plan, request, context, report,
+                is_auto_remediation, max_replan_attempts, skills,
+            )
 
-        plan_dict = None
-        if hasattr(plan, "steps"):
-            plan_dict = {
-                "id": plan.id,
-                "request_id": plan.request_id,
-                "steps": [
-                    {
-                        "id": s.id,
-                        "step_number": s.step_number,
-                        "description": s.description,
-                        "skill_id": s.skill_id,
-                        "tool_name": s.tool_name,
-                        "parameters": s.parameters,
-                        "status": s.status,
-                    }
-                    for s in plan.steps
-                ],
-                "status": plan.status,
-            }
+        # 将 calls 展开为 Plan（通过 build_steps 动态生成步骤）
+        plan = self._build_plan_from_calls(planner_output, request, skills, context)
+
+        plan_dict = self._serialize_plan(plan)
         report.plan = plan_dict
 
         execution_result = await self.executor.execute_plan(
             plan, request, context, max_replan_attempts=max_replan_attempts
         )
         replan_count = getattr(execution_result, "replan_count", 0)
+
+        # 组装报告（复用原有逻辑）
+        return await self._assemble_report(
+            request, execution_result, report, skills,
+            is_auto_remediation, max_replan_attempts, replan_count,
+        )
+
+    def _build_plan_from_calls(
+        self,
+        output: PlannerOutput,
+        request: AgentRequest,
+        skills: List[Any],
+        context: Dict[str, Any],
+    ):
+        """将 PlannerOutput 的 calls 通过 skill.build_steps() 展开为 Plan"""
+        from .schemas import Plan, PlanStep
+
+        skill_map = {s.name: s for s in skills}
+        steps = []
+        step_number = 1
+
+        for call in output.calls:
+            skill_obj = skill_map.get(call.skill)
+            if not skill_obj:
+                continue
+
+            # 核心：动态构建执行步骤
+            dynamic_steps = skill_obj.build_steps(call.args, context)
+
+            for skill_step in dynamic_steps:
+                steps.append(PlanStep(
+                    id=skill_step.id,
+                    step_number=step_number,
+                    description=f"[{skill_obj.name}] {skill_step.name}: {skill_step.description}",
+                    skill_id=skill_obj.name,
+                    tool_name=skill_step.tool_name,
+                    parameters=skill_step.parameters,
+                    status="pending",
+                ))
+                step_number += 1
+
+        return Plan(
+            id=str(uuid.uuid4()),
+            request_id=request.id,
+            steps=steps,
+            status="planned",
+        )
+
+    @staticmethod
+    def _serialize_plan(plan) -> Optional[Dict[str, Any]]:
+        """序列化 Plan 为字典"""
+        if not hasattr(plan, "steps"):
+            return None
+        return {
+            "id": plan.id,
+            "request_id": plan.request_id,
+            "steps": [
+                {
+                    "id": s.id,
+                    "step_number": s.step_number,
+                    "description": s.description,
+                    "skill_id": s.skill_id,
+                    "tool_name": s.tool_name,
+                    "parameters": s.parameters,
+                    "status": s.status,
+                }
+                for s in plan.steps
+            ],
+            "status": plan.status,
+        }
+
+    async def _execute_plan_and_build_report(
+        self, plan, request, context, report,
+        is_auto_remediation, max_replan_attempts, skills,
+    ) -> FinalReport:
+        """兼容路径：直接用已有 Plan 执行并组装报告"""
+        execution_result = await self.executor.execute_plan(
+            plan, request, context, max_replan_attempts=max_replan_attempts
+        )
+        replan_count = getattr(execution_result, "replan_count", 0)
+        return await self._assemble_report(
+            request, execution_result, report, skills,
+            is_auto_remediation, max_replan_attempts, replan_count,
+        )
+
+    async def _assemble_report(
+        self,
+        request: AgentRequest,
+        execution_result: ExecutionResult,
+        report: FinalReport,
+        skills: List[Any],
+        is_auto_remediation: bool,
+        max_replan_attempts: int,
+        replan_count: int,
+    ) -> FinalReport:
+        """组装最终报告（execution_result 已由调用方传入，无需重复执行）"""
 
         skill_results = []
         for skill in skills:
@@ -414,9 +508,12 @@ class AgentOrchestrator:
             for finding in sr.findings:
                 all_evidence.append(finding)
 
+        # 从 context 中获取 env_info（在 run() 方法中已构建）
+        env_info = report.environment  # 可能为 None，后续检查
         if is_auto_remediation:
-            categorized_findings = context.get("categorized_findings", {})
-            findings = context.get("all_findings", [])
+            exec_context = self._build_context(request)
+            categorized_findings = exec_context.get("categorized_findings", {})
+            findings = exec_context.get("all_findings", [])
 
             successful_tools = {
                 s.tool_name
@@ -461,16 +558,16 @@ class AgentOrchestrator:
                     else:
                         unfixed_items.append(f"[{severity}] {title}")
 
-            env_info = context.get("env_info")
-            if env_info:
+            env_info_local = exec_context.get("env_info")
+            if env_info_local:
                 report.environment = {
-                    "os_family": env_info.os_family,
-                    "distribution": env_info.distribution,
-                    "version": env_info.version,
-                    "package_manager": env_info.package_manager,
-                    "init_system": env_info.init_system,
-                    "sudo_available": env_info.sudo_available,
-                    "current_user": env_info.current_user,
+                    "os_family": env_info_local.os_family,
+                    "distribution": env_info_local.distribution,
+                    "version": env_info_local.version,
+                    "package_manager": env_info_local.package_manager,
+                    "init_system": env_info_local.init_system,
+                    "sudo_available": env_info_local.sudo_available,
+                    "current_user": env_info_local.current_user,
                 }
 
         report.fixed_items = fixed_items
@@ -572,11 +669,13 @@ class AgentOrchestrator:
             report.status = execution_result.status.value
             report.final_status = execution_result.status.value
 
+        # 检查权限阻塞（使用 report.environment 中已有的 env_info）
+        local_env = report.environment
         if (
             is_auto_remediation
-            and env_info
-            and not env_info.sudo_available
-            and not env_info.current_user == "root"
+            and local_env
+            and not local_env.get("sudo_available", True)
+            and local_env.get("current_user") != "root"
         ):
             report.status = "blocked_by_permission"
             report.final_status = "blocked_by_permission"

@@ -258,6 +258,22 @@ class ToolCallRequest(BaseModel):
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
 
+class SkillCall(BaseModel):
+    """Planner 输出的单次 Skill 调用（含参数）"""
+
+    skill: str = Field(..., description="Skill 名称")
+    args: Dict[str, Any] = Field(default_factory=dict, description="从自然语言提取的参数")
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="匹配置信度")
+
+
+class PlannerOutput(BaseModel):
+    """Planner 标准输出格式: 用户任务 -> skill + args -> build_steps -> executor"""
+
+    calls: List[SkillCall] = Field(default_factory=list, description="待调用的 Skill 列表")
+    reasoning: str = Field(default="", description="选择理由 / 推理过程")
+    fallback_skill: Optional[str] = Field(None, description="兜底 skill（当无匹配时使用）")
+
+
 class ToolRegistry(BaseModel):
     """工具注册表"""
 

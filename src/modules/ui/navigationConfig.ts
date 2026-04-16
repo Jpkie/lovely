@@ -106,26 +106,12 @@ const ALL_NAV_ITEMS: NavigationItem[] = [
     visibleInModes: ['classic']
   },
   {
-    id: 'ai-command-center',
-    title: 'AI命令中心',
-    description: '智能任务编排与执行',
-    iconKey: 'Robot',
-    visibleInModes: ['classic', 'ai']
-  },
-  {
     id: 'payloader',
     title: 'Payload工具',
     description: '安全测试Payload生成',
     iconKey: 'Code',
     visibleInModes: ['classic']
   },
-  {
-    id: 'ssh-terminal',
-    title: 'SSH终端',
-    description: '远程SSH终端连接',
-    iconKey: 'Code',
-    visibleInModes: ['classic', 'ai']
-  }
 ];
 
 const NAV_ORDER: Record<UIMode, AppPage[]> = {

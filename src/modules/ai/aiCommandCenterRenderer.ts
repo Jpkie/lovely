@@ -687,35 +687,48 @@ export class AICommandCenterRenderer {
   }
 
   /**
+   * 获取当前 AI 模型显示名
+   */
+  private getCurrentModelLabel(): string {
+    try {
+      const raw = localStorage.getItem('lovelyres-ai-config');
+      if (!raw) return '未配置AI';
+      const cfg = JSON.parse(raw);
+      if (!cfg?.provider) return '未配置AI';
+      return cfg.model || cfg.provider;
+    } catch {
+      return '未配置AI';
+    }
+  }
+
+  /**
    * 渲染顶部标题区
    */
   private renderHeader(isConnected: boolean): string {
+    const modelLabel = this.getCurrentModelLabel();
+    const btnBase = 'padding:6px 14px;background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.3);border-radius:6px;color:white;font-size:12px;font-weight:500;backdrop-filter:blur(6px);transition:all 0.2s;white-space:nowrap;';
     return `
       <div class="ai-header">
         <div class="ai-header-title">
           <span style="font-size: 24px;">🎯</span>
           <h1>AI 指挥台</h1>
-          <button
-            class="ai-switch-mode-btn"
-            onclick="window.app.stateManager.setCurrentPage('dashboard'); window.app.render()"
-            title="切换到工具箱模式"
-            style="
-              margin-left: auto;
-              padding: 6px 14px;
-              background: rgba(255,255,255,0.2);
-              border: 1px solid rgba(255,255,255,0.3);
-              border-radius: 6px;
-              color: white;
-              font-size: 12px;
-              font-weight: 500;
-              cursor: pointer;
-              backdrop-filter: blur(6px);
-              transition: all 0.2s;
-              white-space: nowrap;
-            "
-            onmouseover="this.style.background='rgba(255,255,255,0.3)'"
-            onmouseout="this.style.background='rgba(255,255,255,0.2)'"
-          >🔧 工具箱版</button>
+          <div style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+            <button style="${btnBase}cursor:default;" title="当前使用的 AI 模型">🤖 ${modelLabel}</button>
+            <button
+              onclick="window.showSettingsOverlay?.()"
+              title="AI 设置"
+              style="${btnBase}cursor:pointer;"
+              onmouseover="this.style.background='rgba(255,255,255,0.3)'"
+              onmouseout="this.style.background='rgba(255,255,255,0.2)'"
+            >⚙️ AI 设置</button>
+            <button
+              onclick="window.app.stateManager.setCurrentPage('dashboard'); window.app.render()"
+              title="切换到工具箱模式"
+              style="${btnBase}cursor:pointer;"
+              onmouseover="this.style.background='rgba(255,255,255,0.3)'"
+              onmouseout="this.style.background='rgba(255,255,255,0.2)'"
+            >🔧 工具箱版</button>
+          </div>
         </div>
         <div class="ai-header-subtitle">
           一句话下达任务，AI 帮你分析主机并执行检测
